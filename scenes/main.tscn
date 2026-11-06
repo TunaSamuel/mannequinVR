@@ -1,0 +1,49 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/app.gd" id="1_app"]
+[ext_resource type="Script" path="res://scripts/character/character_rig.gd" id="2_rig"]
+[ext_resource type="Script" path="res://scripts/xr/controller_interactor.gd" id="3_controller"]
+[ext_resource type="Script" path="res://scripts/xr/hand_interactor.gd" id="4_hand"]
+[ext_resource type="Script" path="res://scripts/xr/interaction_manager.gd" id="5_interaction"]
+[ext_resource type="Script" path="res://scripts/ui/pose_panel.gd" id="6_panel"]
+
+[node name="Main" type="Node3D"]
+script = ExtResource("1_app")
+
+[node name="XROrigin3D" type="XROrigin3D" parent="."]
+current = true
+
+[node name="XRCamera3D" type="XRCamera3D" parent="XROrigin3D"]
+
+[node name="LeftController" type="XRController3D" parent="XROrigin3D"]
+tracker = &"left_hand"
+pose = &"grip"
+
+[node name="Interactor" type="Node3D" parent="XROrigin3D/LeftController"]
+script = ExtResource("3_controller")
+
+[node name="RightController" type="XRController3D" parent="XROrigin3D"]
+tracker = &"right_hand"
+pose = &"grip"
+
+[node name="Interactor" type="Node3D" parent="XROrigin3D/RightController"]
+script = ExtResource("3_controller")
+
+[node name="LeftHand" type="Node3D" parent="XROrigin3D"]
+script = ExtResource("4_hand")
+hand = 0
+
+[node name="RightHand" type="Node3D" parent="XROrigin3D"]
+script = ExtResource("4_hand")
+hand = 1
+
+[node name="CharacterRoot" type="Node3D" parent="."]
+script = ExtResource("2_rig")
+
+[node name="InteractionManager" type="Node3D" parent="."]
+script = ExtResource("5_interaction")
+
+[node name="PosePanel" type="Node3D" parent="."]
+script = ExtResource("6_panel")
+
+[node name="FloorRing" type="MeshInstance3D" parent="."]

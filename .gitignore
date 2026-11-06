@@ -1,0 +1,19 @@
+# Godot editor cache and imported assets
+.godot/
+
+# Exported builds
+build/
+android/
+*.apk
+*.aab
+*.pck
+*.zip
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Local models / poses are user data, not project source
+models/*.glb
+models/*.gltf
+models/*.gltf.bin
