@@ -35,6 +35,7 @@ environment/defaults/default_environment=""
 [xr]
 
 openxr/enabled=true
+shaders/enabled=true
 openxr/default_action_map="res://openxr_action_map.tres"
 openxr/reference_space=1
 openxr/form_factor=0

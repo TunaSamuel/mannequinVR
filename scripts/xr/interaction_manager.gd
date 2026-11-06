@@ -38,7 +38,7 @@ func _process(_delta: float) -> void:
 			_clear_hover(interactor)
 			continue
 
-		var target: Node3D = _grabbed.get(interactor)
+		var target := _live_target(interactor)
 		var strength := interactor.get_grip_strength()
 		var pressed: bool = _grip_down.get(interactor, false)
 		var threshold := GRAB_RELEASE_THRESHOLD if pressed else GRAB_START_THRESHOLD
@@ -91,21 +91,54 @@ func _find_target(interactor: XRInteractor, targets: Array) -> Node3D:
 
 func _begin(interactor: XRInteractor, target: Node3D) -> void:
 	_grabbed[interactor] = target
+	# Handles and panel widgets can be freed while a grab is active (loading a
+	# different model does exactly that). Drop the grab when the target goes.
+	target.tree_exiting.connect(_on_target_exiting.bind(interactor), CONNECT_ONE_SHOT)
 	target.call("begin_grab", interactor)
 	interactor.pulse(HAPTIC_STRENGTH)
 
 
 func _release(interactor: XRInteractor) -> void:
-	var target: Node3D = _grabbed.get(interactor)
+	var target := _live_target(interactor)
 	_grabbed.erase(interactor)
 	_grip_down[interactor] = false
-	if target != null and is_instance_valid(target):
+	if target != null:
 		target.call("end_grab", interactor)
+
+
+## Returns the grabbed target only while it is still alive. A freed node must
+## never be assigned to a typed variable: Godot reports that as
+## "Trying to assign invalid previously freed instance" and skips the frame.
+func _live_target(interactor: XRInteractor) -> Node3D:
+	var value: Variant = _grabbed.get(interactor)
+	if value == null:
+		return null
+	if not is_instance_valid(value) or not value is Node3D:
+		_grabbed.erase(interactor)
+		_grip_down[interactor] = false
+		return null
+	return value as Node3D
+
+
+func _live_hover(interactor: XRInteractor) -> Node3D:
+	var value: Variant = _hovered.get(interactor)
+	if value == null:
+		return null
+	if not is_instance_valid(value) or not value is Node3D:
+		_hovered.erase(interactor)
+		return null
+	return value as Node3D
+
+
+func _on_target_exiting(interactor: XRInteractor) -> void:
+	_grabbed.erase(interactor)
+	_grip_down[interactor] = false
+	_hovered.erase(interactor)
 
 
 func _update_hover(interactor: XRInteractor, targets: Array) -> void:
 	var target := _find_target(interactor, targets)
-	var previous: Node3D = _hovered.get(interactor)
+	var previous := _live_hover(interactor)
 	if previous == target:
 		return
 	_set_hover(previous, false)
@@ -114,7 +147,7 @@ func _update_hover(interactor: XRInteractor, targets: Array) -> void:
 
 
 func _clear_hover(interactor: XRInteractor) -> void:
-	var previous: Node3D = _hovered.get(interactor)
+	var previous := _live_hover(interactor)
 	_set_hover(previous, false)
 	_hovered.erase(interactor)
 
@@ -131,4 +164,4 @@ func _on_interactor_exiting(interactor: XRInteractor) -> void:
 
 
 func grabbed_target(interactor: XRInteractor) -> Node3D:
-	return _grabbed.get(interactor)
+	return _live_target(interactor)

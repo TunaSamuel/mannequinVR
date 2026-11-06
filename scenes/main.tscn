@@ -17,14 +17,14 @@ current = true
 
 [node name="LeftController" type="XRController3D" parent="XROrigin3D"]
 tracker = &"left_hand"
-pose = &"grip"
+pose = &"aim"
 
 [node name="Interactor" type="Node3D" parent="XROrigin3D/LeftController"]
 script = ExtResource("3_controller")
 
 [node name="RightController" type="XRController3D" parent="XROrigin3D"]
 tracker = &"right_hand"
-pose = &"grip"
+pose = &"aim"
 
 [node name="Interactor" type="Node3D" parent="XROrigin3D/RightController"]
 script = ExtResource("3_controller")

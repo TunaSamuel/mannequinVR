@@ -21,6 +21,7 @@ var _tracking := false
 
 
 func _ready() -> void:
+	super._ready()
 	_openxr = XRServer.find_interface("OpenXR") as OpenXRInterface
 	_origin = _find_origin()
 	# Only worth flagging while a real session is running: without a headset the
@@ -74,12 +75,32 @@ func get_grip_strength() -> float:
 	return clampf(inverse_lerp(PINCH_OPEN_DISTANCE, PINCH_CLOSED_DISTANCE, distance), 0.0, 1.0)
 
 
+## The laser starts at the index fingertip and follows the pointing finger, so
+## far-away handles and panel controls can be pinched. When the ray misses, the
+## pinch midpoint keeps direct touch working exactly as before.
+func get_pointer_origin() -> Vector3:
+	if not is_tracking():
+		return global_position
+	return _joint_transform(OpenXRInterface.HAND_JOINT_INDEX_TIP).origin
+
+
+func get_pointer_direction() -> Vector3:
+	if not is_tracking():
+		return -global_transform.basis.z
+	var tip := _joint_transform(OpenXRInterface.HAND_JOINT_INDEX_TIP).origin
+	var base := _joint_transform(OpenXRInterface.HAND_JOINT_INDEX_INTERMEDIATE).origin
+	var direction := tip - base
+	if direction.length_squared() < 0.000001:
+		return -global_transform.basis.z
+	return direction.normalized()
+
+
 func get_grab_point() -> Vector3:
 	if not is_tracking():
 		return global_position
 	var thumb := _joint_transform(OpenXRInterface.HAND_JOINT_THUMB_TIP).origin
 	var index := _joint_transform(OpenXRInterface.HAND_JOINT_INDEX_TIP).origin
-	return (thumb + index) * 0.5
+	return pointer_grab_point((thumb + index) * 0.5)
 
 
 func get_grab_basis() -> Basis:

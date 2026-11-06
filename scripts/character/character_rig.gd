@@ -8,10 +8,13 @@ signal model_cleared
 signal status_message(message: String)
 signal pose_edited
 
-const TARGET_HEIGHT := 1.7
-const MIN_NATURAL_HEIGHT := 0.6
-const MAX_NATURAL_HEIGHT := 2.4
+const TARGET_HEIGHT := 1.6
+const MIN_NATURAL_HEIGHT := 0.55
+const MAX_NATURAL_HEIGHT := 2.0
 const GRAB_MARGIN := 0.04
+## Manual scale range offered by the panel, relative to the fitted size.
+const MIN_SCALE_MULTIPLIER := 0.2
+const MAX_SCALE_MULTIPLIER := 3.0
 
 var model_root: Node3D
 var posing_root: Node3D
@@ -20,6 +23,9 @@ var blend_shapes := BlendShapeSet.new()
 
 var model_source := ""
 var model_name := ""
+## Scale applied by the automatic fit, and the user's multiplier on top of it.
+var base_scale := 1.0
+var scale_multiplier := 1.0
 var model_stats: Dictionary = {}
 var model_warnings: PackedStringArray = []
 
@@ -118,34 +124,85 @@ func unload() -> void:
 	model_name = ""
 	model_stats = {}
 	model_warnings = PackedStringArray()
+	base_scale = 1.0
+	scale_multiplier = 1.0
+	_apply_scale()
 	model_cleared.emit()
 
 
 ## Centers the model on the rig origin, puts its feet on the floor and scales
 ## wildly-sized characters to a comfortable human-ish height.
 func _fit_model_to_floor(stats: Dictionary) -> void:
+	base_scale = 1.0
+	scale_multiplier = 1.0
 	if model_root.get_child_count() == 0:
+		_apply_scale()
 		return
 	var instance := model_root.get_child(0) as Node3D
 	if instance == null:
+		_apply_scale()
 		return
-	var bounds: AABB = stats.get("aabb", AABB())
-	if not bool(stats.get("has_bounds", false)) or bounds.size == Vector3.ZERO:
+	# Measured from the instantiated meshes: imported/skinned models regularly
+	# have a very different bounding box from what their import stats suggest,
+	# and a wrong box is what leaves a character filling the room.
+	var bounds := _subtree_bounds(instance)
+	if bounds.size == Vector3.ZERO:
+		bounds = stats.get("aabb", AABB())
+	if bounds.size == Vector3.ZERO:
 		instance.position = Vector3.ZERO
-		scale = Vector3.ONE
+		_apply_scale()
 		return
-
-	var height := bounds.size.y
-	var fit_scale := 1.0
-	if height > 0.001 and (height < MIN_NATURAL_HEIGHT or height > MAX_NATURAL_HEIGHT):
-		fit_scale = clampf(TARGET_HEIGHT / height, 0.1, 10.0)
 
 	instance.position = Vector3(
 		-bounds.position.x - bounds.size.x * 0.5,
 		-bounds.position.y,
 		-bounds.position.z - bounds.size.z * 0.5,
 	)
-	scale = Vector3.ONE * fit_scale
+	base_scale = _fit_scale_for_height(bounds.size.y)
+	_apply_scale()
+
+
+static func _fit_scale_for_height(height: float) -> float:
+	if height <= 0.001:
+		return 1.0
+	if height >= MIN_NATURAL_HEIGHT and height <= MAX_NATURAL_HEIGHT:
+		return 1.0
+	return clampf(TARGET_HEIGHT / height, 0.02, 20.0)
+
+
+## Character height as displayed, in metres.
+func world_height() -> float:
+	var bounds := world_bounds()
+	return bounds.size.y
+
+
+func set_scale_multiplier(value: float) -> void:
+	scale_multiplier = clampf(value, MIN_SCALE_MULTIPLIER, MAX_SCALE_MULTIPLIER)
+	_apply_scale()
+
+
+func get_scale_multiplier() -> float:
+	return scale_multiplier
+
+
+## Rescales the character so it stands `target_height` metres tall.
+func fit_to_height(target_height: float = TARGET_HEIGHT) -> bool:
+	if not has_model():
+		return false
+	var model := model_root.get_child(0) as Node3D
+	if model == null:
+		return false
+	var bounds := _subtree_bounds(model)
+	if bounds.size.y <= 0.001:
+		return false
+	base_scale = clampf(target_height / bounds.size.y, 0.02, 20.0)
+	scale_multiplier = 1.0
+	_apply_scale()
+	return true
+
+
+func _apply_scale() -> void:
+	scale = Vector3.ONE * base_scale * scale_multiplier
 
 
 func get_info() -> Dictionary:
@@ -161,6 +218,8 @@ func get_info() -> Dictionary:
 		"handles": handle_count,
 		"blend_shapes": blend_shapes.count(),
 		"posers": posers.size(),
+		"scale_multiplier": scale_multiplier,
+		"height": world_height(),
 	}
 
 
@@ -212,6 +271,9 @@ func apply_pose(document: Dictionary) -> Dictionary:
 					float(rotation_data[2]), float(rotation_data[3]))
 			var uniform_scale := float(character_data.get("scale", scale.x))
 			global_transform = Transform3D(Basis(rotation).scaled(Vector3.ONE * uniform_scale), position)
+			# Keep the panel's scale control in step with a restored pose.
+			scale_multiplier = clampf(uniform_scale / maxf(base_scale, 0.0001),
+					MIN_SCALE_MULTIPLIER, MAX_SCALE_MULTIPLIER)
 
 	for entry in (document.get("skeletons", []) as Array):
 		if typeof(entry) != TYPE_DICTIONARY:
@@ -251,6 +313,13 @@ func can_grab(point: Vector3) -> bool:
 
 func get_grab_priority() -> int:
 	return 5
+
+
+## Laser hit test against the character's bounding box.
+func ray_hit(origin: Vector3, direction: Vector3, max_distance: float) -> float:
+	if not has_model():
+		return INF
+	return XRPointerRay.ray_aabb(origin, direction.normalized(), world_bounds(), max_distance)
 
 
 ## Two hands can hold the character at once for scaling and rotation.

@@ -19,6 +19,7 @@ var grab_radius := 0.042
 var _skeleton: Skeleton3D
 var _mesh_instance: MeshInstance3D
 var _highlight := Highlight.NONE
+var _hovered := false
 var _materials: Dictionary = {}
 var _grabbed_by: XRInteractor
 var _start_bone_pose := Transform3D()
@@ -72,8 +73,6 @@ func is_bone_pose_valid() -> bool:
 
 
 func set_highlight(highlight: Highlight) -> void:
-	if _highlight == highlight:
-		return
 	_highlight = highlight
 	if _mesh_instance == null:
 		return
@@ -86,6 +85,19 @@ func set_highlight(highlight: Highlight) -> void:
 			_mesh_instance.material_override = _materials[NORMAL_COLOR]
 
 
+## Kept for parity with the other grab targets: highlighting the joint you are
+## aiming at is the main cue that it can be posed.
+func set_hover(hovered: bool) -> void:
+	_hovered = hovered
+	if is_grabbed():
+		return
+	set_highlight(Highlight.HOVER if hovered else Highlight.NONE)
+
+
+func get_highlight() -> int:
+	return int(_highlight)
+
+
 func is_grabbed() -> bool:
 	return _grabbed_by != null
 
@@ -96,6 +108,18 @@ func can_grab(point: Vector3) -> bool:
 	if not is_bone_pose_valid() or is_grabbed():
 		return false
 	return global_position.distance_to(point) <= grab_radius
+
+
+func get_grab_radius() -> float:
+	return grab_radius
+
+
+## Laser hit test: the ray counts as a hit while it passes through the sphere
+## that `can_grab` accepts, so the pointer point is always grabbable.
+func ray_hit(origin: Vector3, direction: Vector3, max_distance: float) -> float:
+	if not is_bone_pose_valid() or is_grabbed():
+		return INF
+	return XRPointerRay.ray_sphere(origin, direction, global_position, grab_radius, max_distance)
 
 
 func get_grab_priority() -> int:
@@ -133,7 +157,7 @@ func drag_grab(interactor: XRInteractor) -> void:
 
 func end_grab(_interactor: XRInteractor) -> void:
 	_grabbed_by = null
-	set_highlight(Highlight.NONE)
+	set_highlight(Highlight.HOVER if _hovered else Highlight.NONE)
 	_emit_pose_changed()
 
 

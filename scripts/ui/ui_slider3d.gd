@@ -109,6 +109,26 @@ func get_grab_distance(point: Vector3) -> float:
 	return outside.length() + absf(local.z)
 
 
+func get_grab_radius() -> float:
+	return Vector2(length * 0.5, 0.028).length()
+
+
+## Laser hit test against the slider track.
+func ray_hit(origin: Vector3, direction: Vector3, max_distance: float) -> float:
+	if is_grabbed():
+		return INF
+	var hit := XRPointerRay.ray_plane_local(self, origin, direction)
+	if hit.is_empty():
+		return INF
+	if float(hit["distance"]) > max_distance:
+		return INF
+	if absf(float(hit["x"])) > length * 0.5 + 0.015:
+		return INF
+	if absf(float(hit["y"])) > 0.028:
+		return INF
+	return float(hit["distance"])
+
+
 func is_grabbed() -> bool:
 	return _grabbed_by != null
 

@@ -37,9 +37,10 @@ static func resolve_directories() -> PackedStringArray:
 		dirs.append(override)
 
 	dirs.append("user://models")
-	if not OS.has_feature("standalone"):
-		# Running from source: allow a repo-local models folder.
-		dirs.append(ProjectSettings.globalize_path("res://models"))
+	# Bundled with the build (the export preset keeps models/ in the PCK) and
+	# readable straight from source. This is the one location that always works
+	# on Quest without copying anything onto the headset.
+	dirs.append("res://models")
 
 	if OS.has_feature("android"):
 		var package := android_package_name()
@@ -54,6 +55,11 @@ static func resolve_directories() -> PackedStringArray:
 static func android_package_name() -> String:
 	if not OS.has_feature("android"):
 		return ""
+	# Most reliable source: the app's own data directory, e.g.
+	# /data/user/0/com.example.app/files.
+	var from_data_dir := package_name_from_data_dir(OS.get_user_data_dir())
+	if not from_data_dir.is_empty():
+		return from_data_dir
 	# For an Android app process, /proc/self/cmdline holds the package name.
 	var cmdline := FileAccess.get_file_as_string("/proc/self/cmdline")
 	for part in cmdline.split("\u0000", false):
@@ -69,6 +75,21 @@ static func android_package_name() -> String:
 			var package_part := parts[2]
 			var dash := package_part.rfind("-")
 			return package_part if dash == -1 else package_part.substr(0, dash)
+	return ""
+
+
+## Extracts "com.example.app" from a data directory such as
+## /data/user/0/com.example.app/files.
+static func package_name_from_data_dir(data_dir: String) -> String:
+	if data_dir.is_empty():
+		return ""
+	var parts := data_dir.replace("\\", "/").split("/", false)
+	for index in range(parts.size() - 1, -1, -1):
+		var part := parts[index]
+		if part == "files" or part == "data" or part == "user" or part.is_valid_int():
+			continue
+		if part.contains(".") and not part.contains(":"):
+			return part
 	return ""
 
 
@@ -92,30 +113,61 @@ func scan() -> Array[Dictionary]:
 	var entries: Array[Dictionary] = []
 	var seen := {}
 	for dir in _directories:
-		var access := DirAccess.open(dir)
-		if access == null:
-			continue
-		access.list_dir_begin()
-		var file_name := access.get_next()
-		while not file_name.is_empty():
-			if not access.current_is_dir() and not file_name.begins_with("."):
-				var ext := file_name.get_extension().to_lower()
-				if SUPPORTED_EXTENSIONS.has(ext):
-					var path := dir.path_join(file_name)
-					if not seen.has(path):
-						seen[path] = true
-						entries.append({
-							"path": path,
-							"name": file_name.get_basename(),
-							"directory": dir,
-							"size": _file_size(path),
-						})
-			file_name = access.get_next()
-		access.list_dir_end()
+		for entry in _scan_directory(dir):
+			var path := String(entry["path"])
+			if seen.has(path):
+				continue
+			seen[path] = true
+			entries.append(entry)
 	entries.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		return String(a["name"]).naturalnocasecmp_to(String(b["name"])) < 0
 	)
 	return entries
+
+
+func _scan_directory(dir: String) -> Array[Dictionary]:
+	var entries: Array[Dictionary] = []
+	var access := DirAccess.open(dir)
+	if access == null:
+		return entries
+	access.list_dir_begin()
+	var file_name := access.get_next()
+	while not file_name.is_empty():
+		if not access.current_is_dir() and not file_name.begins_with("."):
+			var ext := file_name.get_extension().to_lower()
+			if SUPPORTED_EXTENSIONS.has(ext):
+				var path := dir.path_join(file_name)
+				entries.append({
+					"path": path,
+					"name": file_name.get_basename(),
+					"directory": dir,
+					"size": _file_size(path),
+				})
+		file_name = access.get_next()
+	access.list_dir_end()
+	return entries
+
+
+## Where models were looked for, and what was found there. The panel shows this
+## when the list is empty, so a missing model is diagnosable on the headset.
+func scan_report() -> Array[Dictionary]:
+	var report: Array[Dictionary] = []
+	for dir in _directories:
+		var exists := DirAccess.dir_exists_absolute(dir)
+		report.append({
+			"directory": dir,
+			"display": display_path(dir),
+			"exists": exists,
+			"models": _scan_directory(dir).size() if exists else 0,
+		})
+	return report
+
+
+## Absolute path for display: res:// and user:// mean nothing to a headset user.
+static func display_path(path: String) -> String:
+	if path.begins_with("res://") or path.begins_with("user://"):
+		return ProjectSettings.globalize_path(path)
+	return path
 
 
 static func _file_size(path: String) -> int:

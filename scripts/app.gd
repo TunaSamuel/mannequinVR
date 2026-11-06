@@ -24,6 +24,7 @@ func _ready() -> void:
 	_xr_active = _openxr != null and _openxr.is_initialized()
 
 	_setup_passthrough()
+	_setup_environment()
 	_setup_floor_ring()
 	_register_interactors(xr_origin)
 
@@ -49,7 +50,48 @@ func _setup_passthrough() -> void:
 		return
 	# The OpenXR environment blend mode is set to alpha blend in project
 	# settings; the viewport must also be transparent for passthrough to show.
-	get_viewport().transparent_bg = true
+	var viewport := get_viewport()
+	viewport.transparent_bg = true
+	# Without this the OpenXR compositor gets nothing to present and the
+	# engine warns "No viewport was marked with use_xr, there is no rendered
+	# output". Marking the root viewport is the real fix, not a hack.
+	viewport.use_xr = true
+	if camera != null:
+		camera.current = true
+
+
+## Passthrough means there is no sky to light the character, and an unlit model
+## in a real room is nearly invisible. Ambient light plus one shadowless key
+## light keeps characters readable without costing much on mobile.
+func _setup_environment() -> void:
+	var environment := Environment.new()
+	environment.background_mode = Environment.BG_CLEAR_COLOR
+	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	environment.ambient_light_color = Color(0.72, 0.78, 0.90)
+	environment.ambient_light_energy = 0.65
+	environment.tonemap_mode = Environment.TONE_MAPPER_LINEAR
+
+	var world_environment := WorldEnvironment.new()
+	world_environment.name = "Lighting"
+	world_environment.environment = environment
+	add_child(world_environment)
+
+	var key := DirectionalLight3D.new()
+	key.name = "KeyLight"
+	key.rotation_degrees = Vector3(-55.0, -35.0, 0.0)
+	key.light_energy = 1.1
+	key.light_color = Color(1.0, 0.97, 0.92)
+	# Shadows are expensive on mobile and look wrong floating in a real room.
+	key.shadow_enabled = false
+	add_child(key)
+
+	var fill := OmniLight3D.new()
+	fill.name = "FillLight"
+	fill.position = Vector3(0.9, 1.6, 0.7)
+	fill.omni_range = 4.5
+	fill.light_energy = 1.6
+	fill.shadow_enabled = false
+	add_child(fill)
 
 
 func _register_interactors(node: Node) -> void:

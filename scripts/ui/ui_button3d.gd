@@ -107,6 +107,26 @@ func get_grab_distance(point: Vector3) -> float:
 	return outside.length() + absf(local.z)
 
 
+func get_grab_radius() -> float:
+	return Vector2(size.x * 0.5 + GRAB_PADDING, size.y * 0.5 + GRAB_PADDING).length()
+
+
+## Laser hit test against the button rectangle.
+func ray_hit(origin: Vector3, direction: Vector3, max_distance: float) -> float:
+	if not enabled or is_grabbed():
+		return INF
+	var hit := XRPointerRay.ray_plane_local(self, origin, direction)
+	if hit.is_empty():
+		return INF
+	if float(hit["distance"]) > max_distance:
+		return INF
+	if absf(float(hit["x"])) > size.x * 0.5 + GRAB_PADDING:
+		return INF
+	if absf(float(hit["y"])) > size.y * 0.5 + GRAB_PADDING:
+		return INF
+	return float(hit["distance"])
+
+
 func is_grabbed() -> bool:
 	return _grabbed_by != null
 

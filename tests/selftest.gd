@@ -47,9 +47,14 @@ func _run() -> void:
 	await _test_pose_presets()
 	await _test_model_library()
 	await _test_interaction_routing()
+	await _test_pointer_ray()
+	await _test_stale_grab_target()
+	await _test_scale_controls()
+	await _test_model_scan_report()
 	await _test_two_handed_scale()
 	await _test_model_without_skeleton()
 	await _test_panel_construction()
+	await _test_scene_wiring()
 	_cleanup()
 
 
@@ -493,6 +498,183 @@ func _test_panel_construction() -> void:
 	panel.queue_free()
 	rig.queue_free()
 	await get_tree().process_frame
+
+
+func _test_pointer_ray() -> void:
+	_section("laser pointer")
+	var button := UIButton3D.new()
+	add_child(button)
+	button.position = Vector3(0, 1.2, -0.6)
+	button.setup("Tap", Vector2(0.2, 0.05))
+	await get_tree().process_frame
+
+	var origin := Vector3(0, 1.2, 0.0)
+	var hit := XRPointerRay.cast(origin, Vector3.FORWARD, 1.7, [button])
+	_check(not hit.is_empty(), "ray finds a panel button in front of it")
+	if not hit.is_empty():
+		var distance := float(hit["distance"])
+		_check(distance > 0.5 and distance < 0.7, "hit distance is measured along the ray (%.2f m)" % distance)
+		_check(button.can_grab(hit["point"] as Vector3), "the pointer point is a valid grab point")
+	_check(XRPointerRay.cast(origin, Vector3.RIGHT, 1.7, [button]).is_empty(),
+			"aiming away misses the button")
+
+	# Drive the real pointer node once so drawing, colours and visibility are
+	# exercised, not just the maths.
+	var pointer := XRPointerRay.new()
+	add_child(pointer)
+	await get_tree().process_frame
+	pointer.update_ray(origin, Vector3.FORWARD, [button])
+	_check(pointer.visible and pointer.has_hit, "pointer ray becomes visible when it hits")
+	_check(pointer.get_node_or_null("Line") != null, "pointer draws a laser line")
+	_check(pointer.get_node_or_null("Cursor") != null and pointer.get_node("Cursor").visible,
+			"pointer shows a cursor on the hit point")
+	pointer.hide_ray()
+	_check(not pointer.visible and not pointer.has_hit, "pointer hides itself when not tracking")
+	pointer.queue_free()
+	button.queue_free()
+
+	var rig := await _spawn_rig()
+	var poser: SkeletonPoser = rig.posers[0]
+	var handle := poser.handle_for_bone(poser.skeleton.find_bone("Head"))
+	_check(handle != null, "head handle exists for pointer tests")
+	if handle != null:
+		var handle_origin := handle.global_position + Vector3(0, 0, 0.4)
+		var sphere_hit := XRPointerRay.ray_sphere(handle_origin, Vector3.FORWARD,
+				handle.global_position, handle.get_grab_radius(), 1.7)
+		_check(sphere_hit != INF, "ray hits the joint sphere")
+		handle.set_hover(true)
+		_check(handle.get_highlight() == BoneHandle.Highlight.HOVER, "hovering a joint highlights it")
+		handle.set_hover(false)
+		_check(handle.get_highlight() == BoneHandle.Highlight.NONE, "leaving the joint clears the highlight")
+
+	_check(XRPointerRay.ray_aabb(Vector3(0, 0, 2), Vector3.FORWARD,
+			AABB(Vector3(-1, -1, -1), Vector3(2, 2, 2)), 5.0) < 1.5, "ray reaches the character box")
+	_check(XRPointerRay.ray_aabb(Vector3(0, 0, 2), Vector3.RIGHT,
+			AABB(Vector3(-1, -1, -1), Vector3(2, 2, 2)), 5.0) == INF, "ray misses the character box")
+
+	rig.queue_free()
+	await get_tree().process_frame
+
+
+func _test_stale_grab_target() -> void:
+	_section("freed grab targets")
+	var rig := await _spawn_rig()
+	var manager := InteractionManager.new()
+	add_child(manager)
+	var hand := FakeInteractor.new()
+	add_child(hand)
+	manager.register_interactor(hand)
+
+	var poser: SkeletonPoser = rig.posers[0]
+	var handle := poser.handle_for_bone(poser.skeleton.find_bone("Head"))
+	hand.point = handle.global_position
+	hand.grip = 1.0
+	manager._process(0.016)
+	_check(manager.grabbed_target(hand) != null, "joint grabbed before the model is replaced")
+
+	# Replacing the model frees every handle while one is still held. That used to
+	# throw "Trying to assign invalid previously freed instance" every frame.
+	rig.install_model(_build_character(), "test://fixture2", "Fixture2")
+	await get_tree().process_frame
+	_check(not is_instance_valid(handle), "replacing the model frees the old handle")
+	manager._process(0.016)
+	# Grip is still held, so the manager is free to grab the matching joint of the
+	# new model; what it must never do is keep the freed one.
+	var current := manager.grabbed_target(hand)
+	_check(current != handle, "the freed handle is no longer the held target")
+	_check(current == null or is_instance_valid(current), "the manager only ever holds live targets")
+	hand.grip = 0.0
+	manager._process(0.016)
+	_check(manager.grabbed_target(hand) == null, "releasing after a freed target is harmless")
+
+	rig.queue_free()
+	manager.queue_free()
+	hand.queue_free()
+	await get_tree().process_frame
+
+
+func _test_scale_controls() -> void:
+	_section("character scale")
+	var rig := await _spawn_rig()
+	var start := rig.scale.x
+	rig.set_scale_multiplier(0.5)
+	_check(is_equal_approx(rig.scale.x, start * 0.5), "scale multiplier halves the character")
+	rig.set_scale_multiplier(99.0)
+	_check(is_equal_approx(rig.scale.x, start * CharacterRig.MAX_SCALE_MULTIPLIER),
+			"scale multiplier is clamped")
+	rig.set_scale_multiplier(1.0)
+	_check(rig.fit_to_height(1.8), "fit_to_height measures the loaded model")
+	_check(absf(rig.world_height() - 1.8) < 0.05, "fitted height is 1.8 m (%.2f m)" % rig.world_height())
+	rig.queue_free()
+	await get_tree().process_frame
+
+	# A character exported in centimetres must not arrive filling the room.
+	var oversized := _build_character()
+	oversized.scale = Vector3(4, 4, 4)
+	var huge_rig := CharacterRig.new()
+	add_child(huge_rig)
+	huge_rig.install_model(oversized, "test://huge", "Huge")
+	_check(absf(huge_rig.world_height() - CharacterRig.TARGET_HEIGHT) < 0.1,
+			"oversized model is auto-fitted on load (%.2f m)" % huge_rig.world_height())
+	huge_rig.queue_free()
+	await get_tree().process_frame
+
+
+func _test_scene_wiring() -> void:
+	_section("scene wiring")
+	_check(bool(ProjectSettings.get_setting("xr/shaders/enabled", false)),
+			"XR shaders are enabled in the project settings")
+	_check(int(ProjectSettings.get_setting("xr/openxr/environment_blend_mode", -1)) == 2,
+			"passthrough is set to alpha blend")
+	_check(bool(ProjectSettings.get_setting("xr/openxr/extensions/hand_tracking", false)),
+			"hand tracking is requested from OpenXR")
+
+	var packed: PackedScene = load("res://scenes/main.tscn")
+	if packed == null:
+		_check(false, "main scene loads")
+		return
+	var main := packed.instantiate()
+	add_child(main)
+	await get_tree().process_frame
+
+	var has_environment := false
+	var has_key_light := false
+	for child in main.get_children():
+		if child is WorldEnvironment:
+			has_environment = true
+		elif child is DirectionalLight3D:
+			has_key_light = true
+	_check(has_environment and has_key_light, "the scene lights the character (ambient + key light)")
+
+	var controller := main.get_node_or_null("XROrigin3D/LeftController") as XRController3D
+	_check(controller != null and controller.pose == &"aim",
+			"controllers are bound to the aim pose so the laser points where you aim")
+	var interactor := main.get_node_or_null("XROrigin3D/LeftController/Interactor") as XRInteractor
+	_check(interactor != null, "controller interactor is wired")
+	if interactor != null:
+		_check(interactor.pointer != null, "controller interactor has a laser pointer")
+		_check(not interactor.pointer.visible, "the pointer stays hidden until the controller is tracked")
+	var hand := main.get_node_or_null("XROrigin3D/RightHand") as XRInteractor
+	_check(hand != null and hand.pointer != null, "hand interactor has a laser pointer")
+
+	main.queue_free()
+	await get_tree().process_frame
+
+
+func _test_model_scan_report() -> void:
+	_section("model folder diagnostics")
+	_check(ModelLibrary.package_name_from_data_dir("/data/user/0/com.example.vrcharacterposer/files")
+			== "com.example.vrcharacterposer", "package name parsed from /data/user/0")
+	_check(ModelLibrary.package_name_from_data_dir("/data/data/com.example.app/files")
+			== "com.example.app", "package name parsed from /data/data")
+	_check(ModelLibrary.package_name_from_data_dir("").is_empty(), "no package without a data dir")
+
+	var library := ModelLibrary.new()
+	_check(library.directories().has("res://models"), "bundled res://models folder is scanned")
+	var report := library.scan_report()
+	_check(report.size() == library.directories().size(), "scan report covers every directory")
+	_check(not report.is_empty() and report[0].has("display") and report[0].has("models"),
+			"scan report entries describe each folder")
 
 
 # --- Helpers ---------------------------------------------------------------

@@ -6,7 +6,7 @@ extends VRPanel
 
 enum Tab { MODELS, SHAPES, POSES }
 
-const MODEL_ROWS := 5
+const MODEL_ROWS := 3
 const SHAPE_ROWS := 4
 const POSE_ROWS := 4
 const MODEL_ROW_STEP := 0.054
@@ -23,6 +23,8 @@ var _model_page := 0
 var _shape_page := 0
 var _bone_filter_button: UIButton3D
 var _tab_row_ready := false
+var _refreshing := false
+var _refresh_pending := false
 
 
 func configure(model_library: ModelLibrary, character_rig: CharacterRig) -> void:
@@ -70,6 +72,14 @@ func _update_tab_buttons() -> void:
 func refresh() -> void:
 	if content_root() == null:
 		return
+	# Buttons emit `pressed` from inside their own grab handling, and loading the
+	# model frees every widget on the panel. Rebuilding re-entrantly in the middle
+	# of that signal is what could hang the panel, so collapse nested requests
+	# into one rebuild.
+	if _refreshing:
+		_refresh_pending = true
+		return
+	_refreshing = true
 	clear_content()
 	_update_tab_buttons()
 	match _tab:
@@ -80,6 +90,10 @@ func refresh() -> void:
 		Tab.POSES:
 			_build_poses()
 	_update_title()
+	_refreshing = false
+	if _refresh_pending:
+		_refresh_pending = false
+		refresh()
 
 
 func _update_title() -> void:
@@ -94,12 +108,7 @@ func _update_title() -> void:
 func _build_models() -> void:
 	_scan_models()
 	if _models.is_empty():
-		add_label("No models found.", Vector3(0, 0.075, 0), 0.018,
-				UIStyle.COLOR_TEXT, HORIZONTAL_ALIGNMENT_CENTER)
-		add_label("Copy .glb files into:", Vector3(0, 0.035, 0), 0.014,
-				UIStyle.COLOR_TEXT_DIM, HORIZONTAL_ALIGNMENT_CENTER)
-		add_label(_model_hint_directory(), Vector3(0, 0.005, 0), 0.013,
-				UIStyle.COLOR_FILL, HORIZONTAL_ALIGNMENT_CENTER)
+		_build_missing_models_hint()
 	else:
 		var start := _model_page * MODEL_ROWS
 		for row in MODEL_ROWS:
@@ -108,25 +117,74 @@ func _build_models() -> void:
 				break
 			var entry := _models[index]
 			var button := add_button(String(entry["name"]),
-					Vector3(0, 0.098 - row * MODEL_ROW_STEP, 0), Vector2(0.50, 0.042))
+					Vector3(0, 0.096 - row * MODEL_ROW_STEP, 0), Vector2(0.50, 0.042))
 			button.pressed.connect(_on_model_pressed.bind(String(entry["path"])))
 			if rig != null and rig.model_source == String(entry["path"]):
 				button.selected = true
 
+	_build_scale_controls(rig != null and rig.has_model())
 	var pages := _page_count(_models.size(), MODEL_ROWS)
 	_add_paging(pages, _model_page, _on_model_page, "Rescan models", _on_rescan)
 
 
-func _model_hint_directory() -> String:
-	if library == null:
-		return "user://models"
-	var directories := library.directories()
-	for directory in directories:
-		if directory.begins_with("/storage") or directory.begins_with("/sdcard"):
-			return directory
-	if not directories.is_empty():
-		return directories[0]
-	return "user://models"
+## Lists every directory that was searched and what was found there, so an empty
+## list on the headset says whether the folder is missing or just empty.
+func _build_missing_models_hint() -> void:
+	add_label("No models found. Looked in:", Vector3(0, 0.080, 0), 0.016,
+			UIStyle.COLOR_TEXT, HORIZONTAL_ALIGNMENT_CENTER)
+	var report: Array[Dictionary] = library.scan_report() if library != null else []
+	var y := 0.044
+	for index in mini(report.size(), 3):
+		var item: Dictionary = report[index]
+		var status := "%d model(s)" % int(item["models"]) if bool(item["exists"]) else "folder missing"
+		add_label("%s - %s" % [String(item["display"]), status], Vector3(0, y, 0), 0.011,
+				UIStyle.COLOR_TEXT_DIM, HORIZONTAL_ALIGNMENT_CENTER)
+		y -= 0.026
+	add_label("Put .glb files in the project's models/ folder and export, or copy them to the app folder above.",
+			Vector3(0, y - 0.004, 0), 0.011, UIStyle.COLOR_FILL, HORIZONTAL_ALIGNMENT_CENTER)
+
+
+func _build_scale_controls(has_model: bool) -> void:
+	var decrease := add_button("Scale -", Vector3(-0.155, -0.082, 0), Vector2(0.14, 0.034), 0.015)
+	decrease.enabled = has_model
+	decrease.pressed.connect(_on_scale_step.bind(-1))
+
+	var readout := add_button(_scale_text(), Vector3(0.0, -0.082, 0), Vector2(0.13, 0.034), 0.015)
+	readout.enabled = false
+
+	var increase := add_button("Scale +", Vector3(0.155, -0.082, 0), Vector2(0.14, 0.034), 0.015)
+	increase.enabled = has_model
+	increase.pressed.connect(_on_scale_step.bind(1))
+
+	var fit := add_button("Fit to 1.6 m", Vector3(0, -0.132, 0), Vector2(0.30, 0.034), 0.015)
+	fit.enabled = has_model
+	fit.pressed.connect(_on_fit_height)
+
+
+func _scale_text() -> String:
+	if rig == null or not rig.has_model():
+		return "--"
+	return "%d%%" % int(round(rig.get_scale_multiplier() * 100.0))
+
+
+func _on_scale_step(direction: int) -> void:
+	if rig == null or not rig.has_model():
+		return
+	var factor := 1.15 if direction > 0 else 1.0 / 1.15
+	rig.set_scale_multiplier(rig.get_scale_multiplier() * factor)
+	set_status("Character scale: %s" % _scale_text())
+	refresh()
+
+
+func _on_fit_height() -> void:
+	if rig == null or not rig.has_model():
+		return
+	if not rig.fit_to_height():
+		set_status("Could not measure this model.", true)
+		refresh()
+		return
+	set_status("Fitted to %.2f m tall." % rig.world_height())
+	refresh()
 
 
 func _on_model_pressed(_button: UIButton3D, path: String) -> void:

@@ -12,6 +12,7 @@ var _controller: XRController3D
 
 
 func _ready() -> void:
+	super._ready()
 	_controller = get_parent() as XRController3D
 	if _controller == null:
 		push_error("ControllerInteractor must be a child of an XRController3D.")
@@ -32,6 +33,12 @@ func is_tracking() -> bool:
 	if _controller == null:
 		return false
 	return _controller.get_is_active() and _controller.get_has_tracking_data()
+
+
+## The controller node is bound to the OpenXR aim pose, so its own transform is
+## already the laser axis; this override just documents the intent.
+func get_grab_point() -> Vector3:
+	return pointer_grab_point(global_position)
 
 
 func get_label() -> String:
