@@ -106,6 +106,11 @@ func uses_select_input() -> bool:
 	return true
 
 
+## Buttons fire once on press; they do not need a sustained grab.
+func is_click_target() -> bool:
+	return true
+
+
 func can_grab(point: Vector3) -> bool:
 	if not enabled or is_grabbed():
 		return false
@@ -160,11 +165,16 @@ func set_hover(hovered: bool) -> void:
 func begin_grab(interactor: XRInteractor) -> void:
 	if not enabled:
 		return
+	# One-shot click: fire immediately. Keeping a sustained grab on a button is
+	# what left them stuck blue / ungrabbable after panel rebuilds.
 	_grabbed_by = interactor
 	_pressed = true
 	_flash_left = PRESS_FLASH_SEC
 	_refresh()
 	pressed.emit(self)
+	# Clear local grab state right away so can_grab works for the next press
+	# even if InteractionManager has not released yet (e.g. still holding trigger).
+	_grabbed_by = null
 
 
 func drag_grab(_interactor: XRInteractor) -> void:
