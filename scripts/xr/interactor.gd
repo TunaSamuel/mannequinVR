@@ -7,9 +7,16 @@ extends Node3D
 ## pointer: it shows where the grab lands, which is what makes it obvious that
 ## joints and panel controls are interactive.
 
-## 0..1 grip/pinch amount. Targets start a grab above ~0.65 and drop below ~0.35.
+## 0..1 grip/pinch amount. Used for bones and character move/scale.
 func get_grip_strength() -> float:
 	return 0.0
+
+
+## 0..1 select/trigger amount. Used for UI buttons and sliders.
+## Controllers map this to the index trigger; hands fall back to pinch so
+## the same gesture still works without controllers.
+func get_select_strength() -> float:
+	return get_grip_strength()
 
 
 ## World-space point used for grabbing and for hover tests.

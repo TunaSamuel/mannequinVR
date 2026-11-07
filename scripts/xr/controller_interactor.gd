@@ -4,9 +4,14 @@ extends XRInteractor
 ##
 ## Add this as a child of an XRController3D: the child sits at the controller's
 ## grip pose, so its transform is already the grab pose in world space.
+##
+## Grip is used for bones / character move-scale.
+## Trigger (select) is used for UI buttons and sliders.
 
 const GRIP_ACTION := &"grip"
 const GRIP_CLICK_ACTION := &"grip_click"
+const TRIGGER_ACTION := &"trigger"
+const TRIGGER_CLICK_ACTION := &"trigger_click"
 
 var _controller: XRController3D
 
@@ -25,6 +30,16 @@ func get_grip_strength() -> float:
 	# report the button.
 	var analog := clampf(_controller.get_float(GRIP_ACTION), 0.0, 1.0)
 	if _controller.is_button_pressed(GRIP_CLICK_ACTION):
+		return maxf(analog, 1.0)
+	return analog
+
+
+func get_select_strength() -> float:
+	if _controller == null:
+		return 0.0
+	# Index trigger for UI. Fall back to trigger_click for binary runtimes.
+	var analog := clampf(_controller.get_float(TRIGGER_ACTION), 0.0, 1.0)
+	if _controller.is_button_pressed(TRIGGER_CLICK_ACTION):
 		return maxf(analog, 1.0)
 	return analog
 
