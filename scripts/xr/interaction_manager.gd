@@ -130,6 +130,9 @@ func _begin(interactor: XRInteractor, target: Node3D) -> void:
 	target.tree_exiting.connect(_on_target_exiting.bind(interactor), CONNECT_ONE_SHOT)
 	target.call("begin_grab", interactor)
 	interactor.pulse(HAPTIC_STRENGTH)
+	# Buttons are one-shot: release immediately so a held trigger cannot pin them.
+	if target.has_method("is_click_target") and bool(target.call("is_click_target")):
+		_release(interactor)
 
 
 func _release(interactor: XRInteractor) -> void:
