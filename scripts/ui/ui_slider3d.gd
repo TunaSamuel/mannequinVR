@@ -1,7 +1,7 @@
 class_name UISlider3D
 extends Node3D
-## A grab-and-slide value control for blend shape weights. Pinch/grip anywhere
-## on the track and drag sideways; the value follows the grab point.
+## A grab-and-slide value control for blend shape weights.
+## Controllers use the **trigger**; hands use pinch. Grip is ignored.
 
 signal value_changed(value: float)
 
@@ -86,7 +86,13 @@ func _value_from_point(point: Vector3) -> float:
 	return clampf((local.x + length * 0.5) / maxf(length, 0.001), 0.0, 1.0)
 
 
-# --- Grab target interface -------------------------------------------------
+func _exit_tree() -> void:
+	_grabbed_by = null
+
+
+func uses_select_input() -> bool:
+	return true
+
 
 func can_grab(point: Vector3) -> bool:
 	if is_grabbed():
@@ -113,7 +119,6 @@ func get_grab_radius() -> float:
 	return Vector2(length * 0.5, 0.028).length()
 
 
-## Laser hit test against the slider track.
 func ray_hit(origin: Vector3, direction: Vector3, max_distance: float) -> float:
 	if is_grabbed():
 		return INF

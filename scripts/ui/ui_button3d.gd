@@ -1,12 +1,16 @@
 class_name UIButton3D
 extends Node3D
-## A directly touchable/pinchable panel button. No laser pointer required:
-## a grab that starts inside the button's rectangle counts as a press.
+## A directly touchable/pinchable panel button.
+##
+## Controllers activate this with the **trigger** (select). Hands still use
+## pinch. Grip is intentionally ignored so posing bones never clicks the UI.
 
 signal pressed(button: UIButton3D)
 
 const SURFACE_TOLERANCE := 0.035
 const GRAB_PADDING := 0.006
+## Visual press flash duration before returning to normal/selected colour.
+const PRESS_FLASH_SEC := 0.12
 
 var size := Vector2(0.18, 0.045)
 var text_height := 0.019
@@ -25,6 +29,7 @@ var _text := ""
 var _hovered := false
 var _pressed := false
 var _grabbed_by: XRInteractor
+var _flash_left := 0.0
 
 
 func setup(button_text: String, button_size: Vector2, height: float = 0.019) -> UIButton3D:
@@ -50,7 +55,6 @@ func set_text(value: String) -> void:
 	if _label == null:
 		return
 	_label.text = value
-	# Shrink long labels instead of letting them spill over the button.
 	var max_width := size.x - 0.014
 	var estimated := 0.0086 * value.length() * (text_height / 0.019)
 	if estimated > max_width and value.length() > 0:
@@ -63,6 +67,20 @@ func get_text() -> String:
 	return _text
 
 
+func _process(delta: float) -> void:
+	if _flash_left > 0.0:
+		_flash_left = maxf(_flash_left - delta, 0.0)
+		if _flash_left <= 0.0 and not is_grabbed():
+			_pressed = false
+			_refresh()
+
+
+func _exit_tree() -> void:
+	_grabbed_by = null
+	_pressed = false
+	_flash_left = 0.0
+
+
 func _refresh() -> void:
 	if _background == null:
 		return
@@ -71,7 +89,7 @@ func _refresh() -> void:
 	if not enabled:
 		color = UIStyle.COLOR_BUTTON_DISABLED
 		text_color = UIStyle.COLOR_TEXT_DIM
-	elif _pressed:
+	elif _pressed or _flash_left > 0.0:
 		color = UIStyle.COLOR_BUTTON_ACTIVE
 		text_color = UIStyle.COLOR_TEXT_ON_ACTIVE
 	elif selected:
@@ -84,7 +102,9 @@ func _refresh() -> void:
 		_label.modulate = text_color
 
 
-# --- Grab target interface -------------------------------------------------
+func uses_select_input() -> bool:
+	return true
+
 
 func can_grab(point: Vector3) -> bool:
 	if not enabled or is_grabbed():
@@ -111,7 +131,6 @@ func get_grab_radius() -> float:
 	return Vector2(size.x * 0.5 + GRAB_PADDING, size.y * 0.5 + GRAB_PADDING).length()
 
 
-## Laser hit test against the button rectangle.
 func ray_hit(origin: Vector3, direction: Vector3, max_distance: float) -> float:
 	if not enabled or is_grabbed():
 		return INF
@@ -143,6 +162,7 @@ func begin_grab(interactor: XRInteractor) -> void:
 		return
 	_grabbed_by = interactor
 	_pressed = true
+	_flash_left = PRESS_FLASH_SEC
 	_refresh()
 	pressed.emit(self)
 
@@ -153,5 +173,6 @@ func drag_grab(_interactor: XRInteractor) -> void:
 
 func end_grab(_interactor: XRInteractor) -> void:
 	_grabbed_by = null
-	_pressed = false
+	if _flash_left <= 0.0:
+		_pressed = false
 	_refresh()
