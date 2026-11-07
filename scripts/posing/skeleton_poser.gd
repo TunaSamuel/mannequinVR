@@ -15,11 +15,11 @@ const MAX_HANDLES := 120
 ## Matched against normalised bone names ("LeftUpperArm" -> "leftupperarm").
 ## Covers Blender/Rigify, VRM and Mixamo naming conventions.
 const MAJOR_KEYWORDS: PackedStringArray = [
-	"hips", "pelvis", "spine", "chest", "upperchest", "torso",
-	"neck", "head", "clavicle", "shoulder",
+	"hips", "pelvis", "spine", "chest", "upperchest", "torso", "abdomen",
+	"neck", "head", "clavicle", "shoulder", "scapula",
 	"upperarm", "arm", "forearm", "lowerarm", "elbow", "hand", "wrist",
 	"upperleg", "thigh", "leg", "calf", "shin", "lowerleg", "knee",
-	"foot", "ankle", "toe", "ball",
+	"foot", "ankle", "toe", "ball", "heel",
 ]
 
 ## Too small or too many to be useful as mannequin handles.
@@ -29,7 +29,7 @@ const EXCLUDED_KEYWORDS: PackedStringArray = [
 ]
 
 @export var filter: BoneFilter = BoneFilter.MAJOR
-@export var handle_radius := 0.017
+@export var handle_radius := 0.022
 
 var skeleton: Skeleton3D
 var skeleton_path := NodePath()
