@@ -12,7 +12,6 @@ const TARGET_HEIGHT := 1.6
 const MIN_NATURAL_HEIGHT := 0.55
 const MAX_NATURAL_HEIGHT := 2.0
 const GRAB_MARGIN := 0.04
-## Manual scale range offered by the panel, relative to the fitted size.
 const MIN_SCALE_MULTIPLIER := 0.2
 const MAX_SCALE_MULTIPLIER := 3.0
 
@@ -23,7 +22,6 @@ var blend_shapes := BlendShapeSet.new()
 
 var model_source := ""
 var model_name := ""
-## Scale applied by the automatic fit, and the user's multiplier on top of it.
 var base_scale := 1.0
 var scale_multiplier := 1.0
 var model_stats: Dictionary = {}
@@ -62,47 +60,35 @@ func has_model() -> bool:
 	return model_root != null and model_root.get_child_count() > 0
 
 
-# --- Loading ---------------------------------------------------------------
-
-## Loads a character. Returns the loader result so callers can show an error.
 func load_model(path: String) -> ModelLoader.Result:
 	var result := ModelLoader.load_from_path(path)
 	if not result.ok:
 		status_message.emit(result.error)
 		return result
-
 	install_model(result.scene, path, path.get_file().get_basename(), result.stats)
 	for warning in result.warnings:
 		push_warning("Model '%s': %s" % [model_name, warning])
 	return result
 
 
-## Installs an already-built model scene. Used by the loader and by tests.
 func install_model(scene: Node3D, source_path: String = "", display_name: String = "",
 		stats: Dictionary = {}) -> Dictionary:
 	_ensure_containers()
 	unload()
-
 	model_source = source_path
 	model_name = display_name if not display_name.is_empty() else scene.name
 	model_stats = stats if not stats.is_empty() else ModelLoader.analyze(scene)
 	model_warnings = ModelLoader.warnings_for(model_stats)
-
 	model_root.add_child(scene)
 	_fit_model_to_floor(model_stats)
-
-	# One poser per skeleton: most characters have one, but multi-part imports
-	# can bring several.
 	for skeleton in ModelLoader.collect_skeletons(scene):
 		var poser := SkeletonPoser.new()
 		posing_root.add_child(poser)
 		poser.setup(skeleton, model_root.get_path_to(skeleton))
 		poser.bone_pose_edited.connect(_on_pose_edited)
 		posers.append(poser)
-
 	blend_shapes.collect(scene)
 	pose_edited.emit()
-
 	var info := get_info()
 	model_changed.emit(info)
 	return info
@@ -130,8 +116,6 @@ func unload() -> void:
 	model_cleared.emit()
 
 
-## Centers the model on the rig origin, puts its feet on the floor and scales
-## wildly-sized characters to a comfortable human-ish height.
 func _fit_model_to_floor(stats: Dictionary) -> void:
 	base_scale = 1.0
 	scale_multiplier = 1.0
@@ -142,9 +126,6 @@ func _fit_model_to_floor(stats: Dictionary) -> void:
 	if instance == null:
 		_apply_scale()
 		return
-	# Measured from the instantiated meshes: imported/skinned models regularly
-	# have a very different bounding box from what their import stats suggest,
-	# and a wrong box is what leaves a character filling the room.
 	var bounds := _subtree_bounds(instance)
 	if bounds.size == Vector3.ZERO:
 		bounds = stats.get("aabb", AABB())
@@ -152,7 +133,6 @@ func _fit_model_to_floor(stats: Dictionary) -> void:
 		instance.position = Vector3.ZERO
 		_apply_scale()
 		return
-
 	instance.position = Vector3(
 		-bounds.position.x - bounds.size.x * 0.5,
 		-bounds.position.y,
@@ -170,13 +150,12 @@ static func _fit_scale_for_height(height: float) -> float:
 	return clampf(TARGET_HEIGHT / height, 0.02, 20.0)
 
 
-## Character height as displayed, in metres.
 func world_height() -> float:
-	var bounds := world_bounds()
-	return bounds.size.y
+	return world_bounds().size.y
 
 
 func set_scale_multiplier(value: float) -> void:
+	_sync_multipliers_from_transform()
 	scale_multiplier = clampf(value, MIN_SCALE_MULTIPLIER, MAX_SCALE_MULTIPLIER)
 	_apply_scale()
 
@@ -185,7 +164,10 @@ func get_scale_multiplier() -> float:
 	return scale_multiplier
 
 
-## Rescales the character so it stands `target_height` metres tall.
+func uniform_scale() -> float:
+	return maxf(base_scale * scale_multiplier, 0.0001)
+
+
 func fit_to_height(target_height: float = TARGET_HEIGHT) -> bool:
 	if not has_model():
 		return false
@@ -202,7 +184,9 @@ func fit_to_height(target_height: float = TARGET_HEIGHT) -> bool:
 
 
 func _apply_scale() -> void:
-	scale = Vector3.ONE * base_scale * scale_multiplier
+	var rotation := global_transform.basis.orthonormalized()
+	var s := uniform_scale()
+	global_transform = Transform3D(rotation.scaled(Vector3.ONE * s), global_position)
 
 
 func get_info() -> Dictionary:
@@ -222,8 +206,6 @@ func get_info() -> Dictionary:
 		"height": world_height(),
 	}
 
-
-# --- Pose presets ----------------------------------------------------------
 
 func capture_pose() -> Dictionary:
 	var skeletons_data: Array = []
@@ -254,10 +236,8 @@ func capture_pose() -> Dictionary:
 	}
 
 
-## Applies a pose document. Returns a summary for the UI.
 func apply_pose(document: Dictionary) -> Dictionary:
 	var summary := {"bones": 0, "shapes": 0, "missing_skeletons": 0}
-
 	var character: Variant = document.get("character", {})
 	if typeof(character) == TYPE_DICTIONARY:
 		var character_data := character as Dictionary
@@ -269,12 +249,10 @@ func apply_pose(document: Dictionary) -> Dictionary:
 			var rotation := Quaternion(
 					float(rotation_data[0]), float(rotation_data[1]),
 					float(rotation_data[2]), float(rotation_data[3]))
-			var uniform_scale := float(character_data.get("scale", scale.x))
-			global_transform = Transform3D(Basis(rotation).scaled(Vector3.ONE * uniform_scale), position)
-			# Keep the panel's scale control in step with a restored pose.
-			scale_multiplier = clampf(uniform_scale / maxf(base_scale, 0.0001),
+			var uniform := float(character_data.get("scale", scale.x))
+			global_transform = Transform3D(Basis(rotation).scaled(Vector3.ONE * uniform), position)
+			scale_multiplier = clampf(uniform / maxf(base_scale, 0.0001),
 					MIN_SCALE_MULTIPLIER, MAX_SCALE_MULTIPLIER)
-
 	for entry in (document.get("skeletons", []) as Array):
 		if typeof(entry) != TYPE_DICTIONARY:
 			continue
@@ -290,7 +268,6 @@ func apply_pose(document: Dictionary) -> Dictionary:
 			matched = true
 		if not matched:
 			summary["missing_skeletons"] += 1
-
 	summary["shapes"] = blend_shapes.apply(document.get("blend_shapes", []))
 	pose_edited.emit()
 	return summary
@@ -303,8 +280,6 @@ func reset_pose() -> void:
 	pose_edited.emit()
 
 
-# --- Grab target interface -------------------------------------------------
-
 func can_grab(point: Vector3) -> bool:
 	if not has_model():
 		return false
@@ -315,14 +290,12 @@ func get_grab_priority() -> int:
 	return 5
 
 
-## Laser hit test against the character's bounding box.
 func ray_hit(origin: Vector3, direction: Vector3, max_distance: float) -> float:
 	if not has_model():
 		return INF
 	return XRPointerRay.ray_aabb(origin, direction.normalized(), world_bounds(), max_distance)
 
 
-## Two hands can hold the character at once for scaling and rotation.
 func accepts_multiple_grabs() -> bool:
 	return true
 
@@ -380,7 +353,6 @@ func drag_grab(interactor: XRInteractor) -> void:
 func end_grab(interactor: XRInteractor) -> void:
 	_grabs.erase(interactor)
 	if _grabs.size() == 1:
-		# Hand over cleanly to the remaining hand instead of snapping.
 		_start_single(_grabs[0])
 
 
@@ -418,7 +390,6 @@ func _drag_dual() -> void:
 	var midpoint := (first + second) * 0.5
 	var distance := maxf(first.distance_to(second), 0.001)
 	var new_scale := clampf(_dual_start_scale * (distance / _dual_start_distance), 0.05, 20.0)
-
 	var yaw := 0.0
 	var flat_axis := Vector3(second.x - first.x, 0.0, second.z - first.z)
 	if flat_axis.length() > 0.02 and _dual_start_axis.length() > 0.02:
@@ -426,9 +397,15 @@ func _drag_dual() -> void:
 	var rotation := (_dual_start_rotation * Basis(Vector3.UP, yaw)).orthonormalized()
 	var basis := rotation.scaled(Vector3.ONE * new_scale)
 	global_transform = Transform3D(basis, midpoint - rotation * (_dual_midpoint_local * new_scale))
+	_sync_multipliers_from_transform()
 
 
-# --- Helpers ---------------------------------------------------------------
+func _sync_multipliers_from_transform() -> void:
+	var live := maxf(scale.x, 0.0001)
+	if base_scale <= 0.0001:
+		base_scale = 1.0
+	scale_multiplier = clampf(live / base_scale, MIN_SCALE_MULTIPLIER, MAX_SCALE_MULTIPLIER)
+
 
 func _on_pose_edited() -> void:
 	pose_edited.emit()
