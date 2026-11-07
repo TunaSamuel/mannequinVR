@@ -31,7 +31,8 @@ func setup(skeleton: Skeleton3D, index: int, radius: float, materials: Dictionar
 	_skeleton = skeleton
 	bone_index = index
 	bone_name = skeleton.get_bone_name(index)
-	grab_radius = radius + 0.024
+	# Generous grab sphere so joints are easy to hit with the laser or a pinch.
+	grab_radius = radius + 0.032
 	_materials = materials
 
 	var sphere := SphereMesh.new()
@@ -55,6 +56,7 @@ func setup(skeleton: Skeleton3D, index: int, radius: float, materials: Dictionar
 func _exit_tree() -> void:
 	# Handles are disposable: never keep a grab alive on a freed handle.
 	_grabbed_by = null
+	set_highlight(Highlight.NONE)
 
 
 ## Moves the handle onto its joint, keeping a constant world-space size even
