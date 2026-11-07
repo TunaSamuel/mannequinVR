@@ -1,20 +1,27 @@
 class_name InteractionManager
 extends Node3D
-## Routes grip/pinch input from every interactor to the nearest grab target.
+## Routes grip/pinch/trigger input from every interactor to the nearest grab target.
 ##
 ## Targets opt in by joining the "grab_target" group and implementing:
 ##   can_grab(point), get_grab_priority(), get_grab_distance(point),
 ##   begin_grab(interactor), drag_grab(interactor), end_grab(interactor)
-## and optionally set_hover(bool) / is_grabbed() / accepts_multiple_grabs().
+## and optionally set_hover(bool) / is_grabbed() / accepts_multiple_grabs() /
+## uses_select_input().
+##
+## UI widgets (priority >= UI_PRIORITY, or uses_select_input() == true) are
+## activated with the controller trigger / hand pinch.
+## Bones and the character body are activated with the controller grip / hand pinch.
 
-## Grip is analog, so use hysteresis to avoid chatter at the threshold.
+## Grip/trigger is analog, so use hysteresis to avoid chatter at the threshold.
 const GRAB_START_THRESHOLD := 0.65
 const GRAB_RELEASE_THRESHOLD := 0.35
 const HAPTIC_STRENGTH := 0.35
+## Priority at or above this value uses select/trigger instead of grip.
+const UI_PRIORITY := 40
 
 var _interactors: Array[XRInteractor] = []
 var _grabbed: Dictionary = {}
-var _grip_down: Dictionary = {}
+var _input_down: Dictionary = {}
 var _hovered: Dictionary = {}
 
 
@@ -39,28 +46,55 @@ func _process(_delta: float) -> void:
 			continue
 
 		var target := _live_target(interactor)
-		var strength := interactor.get_grip_strength()
-		var pressed: bool = _grip_down.get(interactor, false)
+		# While already grabbing, keep using the same input channel that started
+		# the grab so releasing grip doesn't leave a trigger-held UI stuck, etc.
+		var use_select := false
+		if target != null and is_instance_valid(target):
+			use_select = _target_uses_select(target)
+		else:
+			# Peek at whatever is under the pointer to choose the right input.
+			var hover_candidate := _find_target(interactor, targets)
+			use_select = hover_candidate != null and _target_uses_select(hover_candidate)
+
+		var strength := interactor.get_select_strength() if use_select else interactor.get_grip_strength()
+		var pressed: bool = _input_down.get(interactor, false)
 		var threshold := GRAB_RELEASE_THRESHOLD if pressed else GRAB_START_THRESHOLD
 		pressed = strength >= threshold
-		_grip_down[interactor] = pressed
+		_input_down[interactor] = pressed
 
 		if pressed:
 			if target == null or not is_instance_valid(target):
 				target = _find_target(interactor, targets)
 				if target != null:
+					# Re-check channel: only start a grab if the press matches
+					# the target's preferred input (prevents grip from clicking UI).
+					if _target_uses_select(target) != use_select:
+						var other := interactor.get_grip_strength() if use_select else interactor.get_select_strength()
+						if other < GRAB_START_THRESHOLD:
+							_update_hover(interactor, targets)
+							continue
 					_begin(interactor, target)
 					_clear_hover(interactor)
 					continue
 			if target != null and is_instance_valid(target):
 				target.call("drag_grab", interactor)
-			continue
+				continue
 
 		if target != null:
 			_release(interactor)
 			continue
 
 		_update_hover(interactor, targets)
+
+
+func _target_uses_select(target: Node3D) -> bool:
+	if target == null or not is_instance_valid(target):
+		return false
+	if target.has_method("uses_select_input"):
+		return bool(target.call("uses_select_input"))
+	if target.has_method("get_grab_priority"):
+		return int(target.call("get_grab_priority")) >= UI_PRIORITY
+	return false
 
 
 func _find_target(interactor: XRInteractor, targets: Array) -> Node3D:
@@ -101,7 +135,7 @@ func _begin(interactor: XRInteractor, target: Node3D) -> void:
 func _release(interactor: XRInteractor) -> void:
 	var target := _live_target(interactor)
 	_grabbed.erase(interactor)
-	_grip_down[interactor] = false
+	_input_down[interactor] = false
 	if target != null:
 		target.call("end_grab", interactor)
 
@@ -115,7 +149,7 @@ func _live_target(interactor: XRInteractor) -> Node3D:
 		return null
 	if not is_instance_valid(value) or not value is Node3D:
 		_grabbed.erase(interactor)
-		_grip_down[interactor] = false
+		_input_down[interactor] = false
 		return null
 	return value as Node3D
 
@@ -131,8 +165,10 @@ func _live_hover(interactor: XRInteractor) -> Node3D:
 
 
 func _on_target_exiting(interactor: XRInteractor) -> void:
+	# Target is being freed (panel rebuild, model swap). Clear manager state;
+	# the node itself is going away so end_grab is unnecessary.
 	_grabbed.erase(interactor)
-	_grip_down[interactor] = false
+	_input_down[interactor] = false
 	_hovered.erase(interactor)
 
 
