@@ -6,6 +6,11 @@ var target: Node3D
 var _offset_local := Vector3.ZERO
 
 
+## Drag handle needs a sustained grab, unlike normal buttons.
+func is_click_target() -> bool:
+	return false
+
+
 func begin_grab(interactor: XRInteractor) -> void:
 	if not enabled:
 		return
