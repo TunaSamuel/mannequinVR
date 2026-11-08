@@ -137,16 +137,19 @@ func _build_missing_models_hint() -> void:
 
 
 func _build_scale_controls(has_model: bool) -> void:
-	var decrease := add_button("Scale -", Vector3(-0.155, -0.082, 0), Vector2(0.14, 0.034), 0.015)
-	decrease.enabled = has_model
-	decrease.pressed.connect(_on_scale_step.bind(-1))
-
-	var readout := add_button(_scale_text(), Vector3(0.0, -0.082, 0), Vector2(0.13, 0.034), 0.015)
-	readout.enabled = false
-
-	var increase := add_button("Scale +", Vector3(0.155, -0.082, 0), Vector2(0.14, 0.034), 0.015)
-	increase.enabled = has_model
-	increase.pressed.connect(_on_scale_step.bind(1))
+	# Continuous scale via slider (0.2x .. 3.0x). Avoids rapid re-click issues
+	# with Scale +/- and lets the user dial size smoothly.
+	var slider := add_slider("Scale", Vector3(0.0, -0.072, 0), 0.44, 0.014)
+	if has_model and rig != null:
+		var t := _multiplier_to_slider(rig.get_scale_multiplier())
+		slider.set_value(t, false)
+	else:
+		slider.set_value(0.5, false)
+	slider.value_changed.connect(_on_scale_slider)
+	# Disable interaction when no model is loaded by parking it out of reach
+	# (UISlider3D has no enabled flag).
+	if not has_model:
+		slider.position.z = -1.0
 
 	var fit := add_button("Fit to 1.6 m", Vector3(0, -0.132, 0), Vector2(0.30, 0.034), 0.015)
 	fit.enabled = has_model
@@ -159,16 +162,27 @@ func _scale_text() -> String:
 	return "%d%%" % int(round(rig.get_scale_multiplier() * 100.0))
 
 
-func _on_scale_step(_button: UIButton3D, direction: int) -> void:
+func _multiplier_to_slider(mult: float) -> float:
+	var lo := CharacterRig.MIN_SCALE_MULTIPLIER
+	var hi := CharacterRig.MAX_SCALE_MULTIPLIER
+	return clampf((mult - lo) / maxf(hi - lo, 0.001), 0.0, 1.0)
+
+
+func _slider_to_multiplier(t: float) -> float:
+	var lo := CharacterRig.MIN_SCALE_MULTIPLIER
+	var hi := CharacterRig.MAX_SCALE_MULTIPLIER
+	return lerpf(lo, hi, clampf(t, 0.0, 1.0))
+
+
+## Continuous scale. Intentionally does NOT refresh the whole panel — rebuilding
+## mid-drag would free the slider and feel like runaway scrolling.
+func _on_scale_slider(value: float) -> void:
 	if rig == null or not rig.has_model():
 		return
-	var factor := 1.06 if direction > 0 else 1.0 / 1.06
-	var before := rig.get_scale_multiplier()
-	rig.set_scale_multiplier(before * factor)
+	rig.set_scale_multiplier(_slider_to_multiplier(value))
 	set_status("Character scale: %d%% (height %.2f m)" % [
 		int(round(rig.get_scale_multiplier() * 100.0)),
 		rig.world_height()])
-	refresh()
 
 
 func _on_fit_height(_button: UIButton3D = null) -> void:
