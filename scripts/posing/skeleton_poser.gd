@@ -11,6 +11,8 @@ signal filter_changed(filter: int)
 enum BoneFilter { ALL, MAJOR, NONE }
 
 const MAX_HANDLES := 120
+const MIN_HANDLE_RADIUS := 0.012
+const MAX_HANDLE_RADIUS := 0.045
 
 ## Matched against normalised bone names ("LeftUpperArm" -> "leftupperarm").
 ## Covers Blender/Rigify, VRM and Mixamo naming conventions.
@@ -57,6 +59,7 @@ func _build_materials() -> void:
 		BoneHandle.NORMAL_COLOR: BoneHandle.NORMAL_COLOR,
 		BoneHandle.HOVER_COLOR: BoneHandle.HOVER_COLOR,
 		BoneHandle.ACTIVE_COLOR: BoneHandle.ACTIVE_COLOR,
+		BoneHandle.LOCKED_COLOR: BoneHandle.LOCKED_COLOR,
 	}
 	for color in palette:
 		var material := StandardMaterial3D.new()
@@ -78,8 +81,19 @@ func set_filter(new_filter: BoneFilter) -> void:
 	filter_changed.emit(filter)
 
 
+func set_handle_radius(radius: float) -> void:
+	var r := clampf(radius, MIN_HANDLE_RADIUS, MAX_HANDLE_RADIUS)
+	if is_equal_approx(handle_radius, r):
+		return
+	handle_radius = r
+	rebuild()
+
+
 func rebuild() -> void:
+	var locked_names: Dictionary = {}
 	for handle in _handles:
+		if is_instance_valid(handle) and handle.locked:
+			locked_names[handle.bone_name] = true
 		if is_instance_valid(handle):
 			handle.queue_free()
 	_handles.clear()
@@ -99,6 +113,8 @@ func rebuild() -> void:
 		handle.name = "Handle_%s" % skeleton.get_bone_name(bone)
 		add_child(handle)
 		handle.setup(skeleton, bone, handle_radius, _materials)
+		if locked_names.get(handle.bone_name, false):
+			handle.set_locked(true)
 		_handles.append(handle)
 
 
@@ -144,8 +160,31 @@ func handle_for_bone(bone: int) -> BoneHandle:
 	return null
 
 
+func handle_for_name(bone_name: String) -> BoneHandle:
+	for handle in _handles:
+		if is_instance_valid(handle) and handle.bone_name == bone_name:
+			return handle
+	return null
+
+
 func get_bone_count() -> int:
 	return skeleton.get_bone_count() if is_instance_valid(skeleton) else 0
+
+
+func unlock_all() -> int:
+	var n := 0
+	for handle in _handles:
+		if is_instance_valid(handle) and handle.locked:
+			handle.set_locked(false)
+			n += 1
+	return n
+
+
+func toggle_lock_named(bone_name: String) -> int:
+	var handle := handle_for_name(bone_name)
+	if handle == null:
+		return -1
+	return 1 if handle.toggle_locked() else 0
 
 
 # --- Pose editing ----------------------------------------------------------
@@ -168,6 +207,82 @@ func reset_bone(bone_name_to_reset: String) -> bool:
 	skeleton.force_update_all_bone_transforms()
 	bone_pose_edited.emit()
 	return true
+
+
+## Mirror left/right local poses across the character's sagittal plane.
+## Returns the number of bones that received a mirrored pose.
+func mirror_pose() -> int:
+	if not is_instance_valid(skeleton):
+		return 0
+	var count := skeleton.get_bone_count()
+	var names: PackedStringArray = PackedStringArray()
+	names.resize(count)
+	for i in count:
+		names[i] = skeleton.get_bone_name(i)
+
+	# Snapshot every local pose first so pairs do not feed each other mid-pass.
+	var poses: Array[Transform3D] = []
+	poses.resize(count)
+	for i in count:
+		poses[i] = skeleton.get_bone_pose(i)
+
+	var applied := 0
+	var visited: Dictionary = {}
+	for i in count:
+		if visited.get(i, false):
+			continue
+		var pair_name := _mirror_bone_name(names[i])
+		var j := -1
+		if not pair_name.is_empty():
+			j = skeleton.find_bone(pair_name)
+		if j < 0 or j == i:
+			# Centre bone: mirror onto itself.
+			skeleton.set_bone_pose(i, _mirror_local_pose(poses[i]))
+			visited[i] = true
+			applied += 1
+		else:
+			skeleton.set_bone_pose(i, _mirror_local_pose(poses[j]))
+			skeleton.set_bone_pose(j, _mirror_local_pose(poses[i]))
+			visited[i] = true
+			visited[j] = true
+			applied += 2
+	skeleton.force_update_all_bone_transforms()
+	bone_pose_edited.emit()
+	return applied
+
+
+static func _mirror_local_pose(pose: Transform3D) -> Transform3D:
+	var q := pose.basis.get_rotation_quaternion()
+	# Reflect rotation across the YZ plane (character left/right).
+	var mq := Quaternion(q.x, -q.y, -q.z, q.w)
+	var scale := pose.basis.get_scale()
+	var origin := Vector3(-pose.origin.x, pose.origin.y, pose.origin.z)
+	return Transform3D(Basis(mq).scaled(scale), origin)
+
+
+## Best-effort left/right name swap for common conventions.
+static func _mirror_bone_name(name: String) -> String:
+	var replacements := [
+		["Left", "Right"], ["Right", "Left"],
+		["left", "right"], ["right", "left"],
+		["LEFT", "RIGHT"], ["RIGHT", "LEFT"],
+		["_L_", "_R_"], ["_R_", "_L_"],
+		[".L", ".R"], [".R", ".L"],
+		["-L", "-R"], ["-R", "-L"],
+	]
+	for pair in replacements:
+		if name.contains(pair[0]):
+			return name.replace(pair[0], pair[1])
+	# Suffix forms: Bone.L / Bone_L / BoneL at end.
+	if name.ends_with("L") and name.length() > 1 and not name.ends_with("el"):
+		var base := name.substr(0, name.length() - 1)
+		if base.ends_with("_") or base.ends_with(".") or base.ends_with("-"):
+			return base + "R"
+	if name.ends_with("R") and name.length() > 1:
+		var base_r := name.substr(0, name.length() - 1)
+		if base_r.ends_with("_") or base_r.ends_with(".") or base_r.ends_with("-"):
+			return base_r + "L"
+	return ""
 
 
 ## Bone local poses, rest included, as JSON-friendly data.
