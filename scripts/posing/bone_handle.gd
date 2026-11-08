@@ -9,15 +9,18 @@ extends Node3D
 const NORMAL_COLOR := Color(0.35, 0.85, 0.95, 0.85)
 const HOVER_COLOR := Color(1.0, 0.85, 0.35, 0.95)
 const ACTIVE_COLOR := Color(1.0, 0.45, 0.25, 1.0)
+const LOCKED_COLOR := Color(0.42, 0.45, 0.52, 0.55)
 
-enum Highlight { NONE, HOVER, GRABBED }
+enum Highlight { NONE, HOVER, GRABBED, LOCKED }
 
 var bone_index := -1
 var bone_name := ""
 var grab_radius := 0.042
+var locked := false
 
 var _skeleton: Skeleton3D
 var _mesh_instance: MeshInstance3D
+var _label: Label3D
 var _highlight := Highlight.NONE
 var _hovered := false
 var _materials: Dictionary = {}
@@ -49,6 +52,20 @@ func setup(skeleton: Skeleton3D, index: int, radius: float, materials: Dictionar
 	_mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_mesh_instance)
 
+	_label = Label3D.new()
+	_label.text = bone_name
+	_label.font_size = 28
+	_label.pixel_size = 0.00115
+	_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_label.position = Vector3(0.0, radius + 0.028, 0.0)
+	_label.modulate = Color(1.0, 0.95, 0.75, 1.0)
+	_label.outline_modulate = Color(0.05, 0.06, 0.08, 0.9)
+	_label.outline_size = 6
+	_label.no_depth_test = true
+	_label.render_priority = 4
+	_label.visible = false
+	add_child(_label)
+
 	add_to_group("grab_target")
 	sync_transform()
 
@@ -74,26 +91,59 @@ func is_bone_pose_valid() -> bool:
 	return is_instance_valid(_skeleton) and bone_index >= 0 and bone_index < _skeleton.get_bone_count()
 
 
+func set_locked(value: bool) -> void:
+	locked = value
+	if locked and is_grabbed():
+		# Drop any active grab so a locked joint cannot keep being rotated.
+		var who := _grabbed_by
+		_grabbed_by = null
+		if who != null:
+			pass
+	_refresh_visual()
+
+
+func toggle_locked() -> bool:
+	set_locked(not locked)
+	return locked
+
+
 func set_highlight(highlight: Highlight) -> void:
 	_highlight = highlight
 	if _mesh_instance == null:
 		return
+	var color := NORMAL_COLOR
 	match highlight:
 		Highlight.HOVER:
-			_mesh_instance.material_override = _materials[HOVER_COLOR]
+			color = HOVER_COLOR
 		Highlight.GRABBED:
-			_mesh_instance.material_override = _materials[ACTIVE_COLOR]
+			color = ACTIVE_COLOR
+		Highlight.LOCKED:
+			color = LOCKED_COLOR
 		_:
-			_mesh_instance.material_override = _materials[NORMAL_COLOR]
+			color = NORMAL_COLOR
+	if locked and highlight != Highlight.GRABBED:
+		color = LOCKED_COLOR
+	_mesh_instance.material_override = _materials.get(color, _materials.get(NORMAL_COLOR))
+
+
+func _refresh_visual() -> void:
+	if is_grabbed():
+		set_highlight(Highlight.GRABBED)
+	elif locked:
+		set_highlight(Highlight.LOCKED)
+	elif _hovered:
+		set_highlight(Highlight.HOVER)
+	else:
+		set_highlight(Highlight.NONE)
+	if _label != null:
+		_label.visible = _hovered or is_grabbed()
 
 
 ## Kept for parity with the other grab targets: highlighting the joint you are
 ## aiming at is the main cue that it can be posed.
 func set_hover(hovered: bool) -> void:
 	_hovered = hovered
-	if is_grabbed():
-		return
-	set_highlight(Highlight.HOVER if hovered else Highlight.NONE)
+	_refresh_visual()
 
 
 func get_highlight() -> int:
@@ -107,7 +157,7 @@ func is_grabbed() -> bool:
 # --- Grab target interface -------------------------------------------------
 
 func can_grab(point: Vector3) -> bool:
-	if not is_bone_pose_valid() or is_grabbed():
+	if not is_bone_pose_valid() or is_grabbed() or locked:
 		return false
 	return global_position.distance_to(point) <= grab_radius
 
@@ -118,6 +168,7 @@ func get_grab_radius() -> float:
 
 ## Laser hit test: the ray counts as a hit while it passes through the sphere
 ## that `can_grab` accepts, so the pointer point is always grabbable.
+## Locked bones still ray-hit so the name label can show on hover.
 func ray_hit(origin: Vector3, direction: Vector3, max_distance: float) -> float:
 	if not is_bone_pose_valid() or is_grabbed():
 		return INF
@@ -133,17 +184,19 @@ func get_grab_distance(point: Vector3) -> float:
 
 
 func begin_grab(interactor: XRInteractor) -> void:
-	if not is_bone_pose_valid():
+	if not is_bone_pose_valid() or locked:
 		return
 	_grabbed_by = interactor
 	_start_bone_pose = _skeleton.get_bone_global_pose(bone_index)
 	_start_interactor_basis = interactor.get_grab_basis().orthonormalized()
 	_start_skeleton_basis = _skeleton.global_transform.basis.orthonormalized()
 	set_highlight(Highlight.GRABBED)
+	if _label != null:
+		_label.visible = true
 
 
 func drag_grab(interactor: XRInteractor) -> void:
-	if _grabbed_by != interactor or not is_bone_pose_valid():
+	if _grabbed_by != interactor or not is_bone_pose_valid() or locked:
 		return
 	var current_basis := interactor.get_grab_basis().orthonormalized()
 	var world_delta := current_basis * _start_interactor_basis.inverse()
@@ -159,7 +212,7 @@ func drag_grab(interactor: XRInteractor) -> void:
 
 func end_grab(_interactor: XRInteractor) -> void:
 	_grabbed_by = null
-	set_highlight(Highlight.HOVER if _hovered else Highlight.NONE)
+	_refresh_visual()
 	_emit_pose_changed()
 
 
