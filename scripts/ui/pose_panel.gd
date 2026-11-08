@@ -4,7 +4,7 @@ extends VRPanel
 ## pose actions. Everything is grabbed directly, so controllers and hands use
 ## exactly the same gestures.
 
-enum Tab { MODELS, SHAPES, PARTS, POSES }
+enum Tab { MODELS, SHAPES, PARTS, POSES, HELP }
 
 const MODEL_ROWS := 3
 const SHAPE_ROWS := 4
@@ -51,12 +51,16 @@ func _build_tabs() -> void:
 	if _tab_row_ready:
 		return
 	_tab_row_ready = true
-	var labels := ["Models", "Shapes", "Parts", "Poses"]
+	var labels := ["Models", "Shapes", "Parts", "Poses", "Help"]
+	# Five compact tabs across the panel width.
+	var tab_w := 0.104
+	var tab_step := 0.110
+	var tab_x0 := -0.220
 	for index in labels.size():
 		var button := UIButton3D.new()
 		add_child(button)
-		button.position = Vector3(-0.2025 + index * 0.135, 0.140, 0.001)
-		button.setup(labels[index], Vector2(0.128, 0.036), 0.015)
+		button.position = Vector3(tab_x0 + index * tab_step, 0.140, 0.001)
+		button.setup(labels[index], Vector2(tab_w, 0.036), 0.014)
 		button.pressed.connect(_on_tab_pressed.bind(index))
 		_tab_buttons.append(button)
 	_update_tab_buttons()
@@ -90,6 +94,8 @@ func refresh() -> void:
 			_build_parts()
 		Tab.POSES:
 			_build_poses()
+		Tab.HELP:
+			_build_help()
 	_update_title()
 	_refreshing = false
 	if _refresh_pending:
@@ -479,6 +485,38 @@ func _on_load_pose(_button: UIButton3D, path: String) -> void:
 		message += " (%d skeleton mismatch)" % int(summary["missing_skeletons"])
 	set_status(message)
 	refresh()
+
+
+func _build_help() -> void:
+	var lines := [
+		["CONTROLS", true],
+		["Trigger  ·  menus, buttons, sliders", false],
+		["Grip  ·  pose bones or grab the whole model", false],
+		["Left stick  ·  walk", false],
+		["Right stick  ·  turn only", false],
+		["", false],
+		["MODEL", true],
+		["Models tab  ·  load .glb, Floor height, Scale", false],
+		["Grip body  ·  free move / rotate / two-hand scale", false],
+		["", false],
+		["POSING", true],
+		["Grip a joint sphere  ·  rotate that bone", false],
+		["Poses tab  ·  Handles Major / All / Off, save & load", false],
+		["Shapes / Parts  ·  morphs and mesh visibility", false],
+		["", false],
+		["Panel header  ·  drag to move  ·  faces you", false],
+	]
+	var y := 0.100
+	for entry in lines:
+		var text: String = entry[0]
+		var header: bool = entry[1]
+		if text.is_empty():
+			y -= 0.012
+			continue
+		var size := 0.015 if header else 0.0125
+		var color := UIStyle.COLOR_FILL if header else UIStyle.COLOR_TEXT
+		add_label(text, Vector3(0, y, 0), size, color, HORIZONTAL_ALIGNMENT_CENTER)
+		y -= 0.024 if header else 0.020
 
 
 func _add_paging(pages: int, page: int, on_page: Callable, middle_text: String,
