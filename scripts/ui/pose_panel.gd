@@ -162,7 +162,7 @@ func _scale_text() -> String:
 func _on_scale_step(_button: UIButton3D, direction: int) -> void:
 	if rig == null or not rig.has_model():
 		return
-	var factor := 1.15 if direction > 0 else 1.0 / 1.15
+	var factor := 1.06 if direction > 0 else 1.0 / 1.06
 	var before := rig.get_scale_multiplier()
 	rig.set_scale_multiplier(before * factor)
 	set_status("Character scale: %d%% (height %.2f m)" % [
@@ -350,7 +350,7 @@ func _on_save_pose(_button: UIButton3D = null) -> void:
 	refresh()
 
 
-func _on_load_pose(path: String) -> void:
+func _on_load_pose(_button: UIButton3D, path: String) -> void:
 	if rig == null:
 		return
 	var document := PoseStore.read(path)
