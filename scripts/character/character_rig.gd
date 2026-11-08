@@ -295,6 +295,46 @@ func reset_pose() -> void:
 	pose_edited.emit()
 
 
+func mirror_pose() -> int:
+	var total := 0
+	for poser in posers:
+		if is_instance_valid(poser):
+			total += poser.mirror_pose()
+	if total > 0:
+		pose_edited.emit()
+	return total
+
+
+func unlock_all_bones() -> int:
+	var total := 0
+	for poser in posers:
+		if is_instance_valid(poser):
+			total += poser.unlock_all()
+	return total
+
+
+func set_handle_radius(radius: float) -> void:
+	for poser in posers:
+		if is_instance_valid(poser):
+			poser.set_handle_radius(radius)
+
+
+func get_handle_radius() -> float:
+	for poser in posers:
+		if is_instance_valid(poser):
+			return poser.handle_radius
+	return 0.022
+
+
+func toggle_lock_bone(bone_name: String) -> int:
+	for poser in posers:
+		if is_instance_valid(poser):
+			var result := poser.toggle_lock_named(bone_name)
+			if result >= 0:
+				return result
+	return -1
+
+
 func _collect_parts(scene: Node) -> void:
 	_parts.clear()
 	if scene == null:
