@@ -47,6 +47,7 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_update_locomotion(delta)
+	_update_menu_button()
 	if floor_ring != null and floor_ring.visible:
 		floor_ring.global_position = Vector3(rig.global_position.x, 0.002, rig.global_position.z)
 
@@ -154,11 +155,55 @@ func _register_interactors(node: Node) -> void:
 
 
 func _place_panel() -> void:
-	var basis := Basis(Vector3.RIGHT, deg_to_rad(-16.0)) * Basis(Vector3.UP, deg_to_rad(10.0))
-	var origin := xr_origin.global_transform.origin
-	panel.global_transform = Transform3D(basis, origin + PANEL_LOCAL_OFFSET)
-	if not _xr_active:
+	if panel == null:
+		return
+	if not _xr_active or camera == null:
+		var basis := Basis(Vector3.RIGHT, deg_to_rad(-16.0)) * Basis(Vector3.UP, deg_to_rad(10.0))
 		panel.global_transform = Transform3D(basis, PANEL_FALLBACK_POSITION)
+		return
+	# Sit the panel in front of the headset, slightly below eye height.
+	var forward := -camera.global_transform.basis.z
+	forward.y = 0.0
+	if forward.length_squared() < 0.0001:
+		forward = Vector3.FORWARD
+	else:
+		forward = forward.normalized()
+	var right := camera.global_transform.basis.x
+	right.y = 0.0
+	if right.length_squared() < 0.0001:
+		right = Vector3.RIGHT
+	else:
+		right = right.normalized()
+	var pos := camera.global_position + forward * 0.70 + right * -0.12 + Vector3.UP * -0.18
+	var look := Basis.looking_at(-forward, Vector3.UP)
+	panel.global_transform = Transform3D(look, pos)
+
+
+func _update_menu_button() -> void:
+	if panel == null or interaction == null:
+		return
+	for interactor in interaction.interactors():
+		if interactor is ControllerInteractor:
+			var c := interactor as ControllerInteractor
+			if c.was_menu_just_pressed():
+				toggle_panel()
+				return
+
+
+func toggle_panel() -> void:
+	if panel == null:
+		return
+	if panel.visible:
+		_set_panel_open(false)
+		return
+	_place_panel()
+	_set_panel_open(true)
+
+
+func _set_panel_open(open: bool) -> void:
+	panel.visible = open
+	# Stop hidden panel widgets from receiving laser/grab hits.
+	panel.process_mode = Node.PROCESS_MODE_INHERIT if open else Node.PROCESS_MODE_DISABLED
 
 
 func _auto_load_recent() -> void:
