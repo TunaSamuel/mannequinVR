@@ -216,3 +216,13 @@ func _on_interactor_exiting(interactor: XRInteractor) -> void:
 
 func grabbed_target(interactor: XRInteractor) -> Node3D:
 	return _live_target(interactor)
+
+
+## Bone handles / UI widgets currently under a pointer or near-grab volume.
+func hovered_targets() -> Array[Node3D]:
+	var result: Array[Node3D] = []
+	for interactor in _interactors:
+		var target := _live_hover(interactor)
+		if target != null and not result.has(target):
+			result.append(target)
+	return result
