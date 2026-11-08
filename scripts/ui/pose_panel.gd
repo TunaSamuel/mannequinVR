@@ -395,16 +395,28 @@ func _on_hide_all_parts(_button: UIButton3D = null) -> void:
 
 func _build_poses() -> void:
 	var has_model := rig != null and rig.has_model()
-	var reset_button := add_button("Reset pose", Vector3(-0.128, 0.090, 0), Vector2(0.24, 0.040))
+	var reset_button := add_button("Reset pose", Vector3(-0.128, 0.100, 0), Vector2(0.24, 0.034), 0.014)
 	reset_button.enabled = has_model
 	reset_button.pressed.connect(_on_reset_pose)
 
-	_bone_filter_button = add_button(_bone_filter_text(), Vector3(-0.128, 0.036, 0),
-			Vector2(0.24, 0.040))
+	_bone_filter_button = add_button(_bone_filter_text(), Vector3(-0.128, 0.058, 0),
+			Vector2(0.24, 0.034), 0.014)
 	_bone_filter_button.enabled = has_model
 	_bone_filter_button.pressed.connect(_on_cycle_bone_filter)
 
-	var save_button := add_button("Save pose", Vector3(-0.128, -0.018, 0), Vector2(0.24, 0.040))
+	var mirror := add_button("Mirror L/R", Vector3(-0.128, 0.016, 0), Vector2(0.24, 0.034), 0.014)
+	mirror.enabled = has_model
+	mirror.pressed.connect(_on_mirror_pose)
+
+	var lock_h := add_button("Lock hovered", Vector3(-0.128, -0.026, 0), Vector2(0.24, 0.034), 0.014)
+	lock_h.enabled = has_model
+	lock_h.pressed.connect(_on_lock_hovered)
+
+	var unlock := add_button("Unlock all", Vector3(-0.128, -0.068, 0), Vector2(0.24, 0.034), 0.014)
+	unlock.enabled = has_model
+	unlock.pressed.connect(_on_unlock_all)
+
+	var save_button := add_button("Save pose", Vector3(-0.128, -0.110, 0), Vector2(0.24, 0.034), 0.014)
 	save_button.enabled = has_model
 	save_button.pressed.connect(_on_save_pose)
 
@@ -424,7 +436,7 @@ func _build_poses() -> void:
 					Vector2(0.24, 0.040), 0.014)
 			button.enabled = has_model
 			button.pressed.connect(_on_load_pose.bind(String(pose["path"])))
-	add_label("Poses save to user://poses", Vector3(0, -0.130, 0), 0.012,
+	add_label("Poses save to user://poses", Vector3(0, -0.150, 0), 0.012,
 			UIStyle.COLOR_TEXT_DIM, HORIZONTAL_ALIGNMENT_CENTER)
 
 
@@ -442,6 +454,48 @@ func _on_reset_pose(_button: UIButton3D = null) -> void:
 	rig.reset_pose()
 	set_status("Pose reset to rest.")
 	refresh()
+
+
+func _on_mirror_pose(_button: UIButton3D = null) -> void:
+	if rig == null or not rig.has_model():
+		return
+	var n := rig.mirror_pose()
+	set_status("Mirrored pose across %d bones." % n)
+
+
+func _on_lock_hovered(_button: UIButton3D = null) -> void:
+	if rig == null:
+		return
+	var app := _app_root()
+	if app == null or app.interaction == null:
+		set_status("No interactor to read hover from.", true)
+		return
+	var locked_any := false
+	for target in app.interaction.hovered_targets():
+		if target is BoneHandle:
+			var handle := target as BoneHandle
+			var now_locked := handle.toggle_locked()
+			set_status("%s %s" % ["Locked" if now_locked else "Unlocked", handle.bone_name])
+			locked_any = true
+			break
+	if not locked_any:
+		set_status("Point at a bone handle, then press Lock hovered.", true)
+
+
+func _on_unlock_all(_button: UIButton3D = null) -> void:
+	if rig == null:
+		return
+	var n := rig.unlock_all_bones()
+	set_status("Unlocked %d bone(s)." % n)
+
+
+func _app_root() -> Node:
+	var node: Node = self
+	while node != null:
+		if node.has_method("set_floor_ring_visible"):
+			return node
+		node = node.get_parent()
+	return null
 
 
 func _on_cycle_bone_filter(_button: UIButton3D = null) -> void:
@@ -490,33 +544,87 @@ func _on_load_pose(_button: UIButton3D, path: String) -> void:
 func _build_help() -> void:
 	var lines := [
 		["CONTROLS", true],
-		["Trigger  ·  menus, buttons, sliders", false],
-		["Grip  ·  pose bones or grab the whole model", false],
-		["Left stick  ·  walk", false],
-		["Right stick  ·  turn only", false],
-		["", false],
-		["MODEL", true],
-		["Models tab  ·  load .glb, Floor height, Scale", false],
-		["Grip body  ·  free move / rotate / two-hand scale", false],
-		["", false],
-		["POSING", true],
-		["Grip a joint sphere  ·  rotate that bone", false],
-		["Poses tab  ·  Handles Major / All / Off, save & load", false],
-		["Shapes / Parts  ·  morphs and mesh visibility", false],
-		["", false],
-		["Panel header  ·  drag to move  ·  faces you", false],
+		["Trigger · menus   Grip · bones/body", false],
+		["Left stick walk · Right stick turn", false],
+		["Hover a joint · bone name appears", false],
+		["Poses: Mirror, Lock hovered, Unlock all", false],
 	]
 	var y := 0.100
 	for entry in lines:
 		var text: String = entry[0]
 		var header: bool = entry[1]
 		if text.is_empty():
-			y -= 0.012
+			y -= 0.010
 			continue
-		var size := 0.015 if header else 0.0125
+		var size := 0.014 if header else 0.012
 		var color := UIStyle.COLOR_FILL if header else UIStyle.COLOR_TEXT
 		add_label(text, Vector3(0, y, 0), size, color, HORIZONTAL_ALIGNMENT_CENTER)
-		y -= 0.024 if header else 0.020
+		y -= 0.022 if header else 0.018
+
+	y -= 0.006
+	add_label("SETTINGS", Vector3(0, y, 0), 0.014, UIStyle.COLOR_FILL, HORIZONTAL_ALIGNMENT_CENTER)
+	y -= 0.028
+
+	# Handle size
+	var size_slider := add_slider("Handle size", Vector3(0.0, y, 0), 0.42, 0.012)
+	var radius := 0.022
+	if rig != null:
+		radius = rig.get_handle_radius()
+	size_slider.set_value(_radius_to_slider(radius), false)
+	size_slider.value_changed.connect(_on_handle_size)
+	y -= 0.048
+
+	var face := add_button(_auto_face_label(), Vector3(-0.12, y, 0), Vector2(0.22, 0.032), 0.013)
+	face.pressed.connect(_on_toggle_auto_face)
+	var ring := add_button(_ring_label(), Vector3(0.12, y, 0), Vector2(0.22, 0.032), 0.013)
+	ring.pressed.connect(_on_toggle_ring)
+
+
+func _radius_to_slider(radius: float) -> float:
+	var lo := SkeletonPoser.MIN_HANDLE_RADIUS
+	var hi := SkeletonPoser.MAX_HANDLE_RADIUS
+	return clampf((radius - lo) / maxf(hi - lo, 0.001), 0.0, 1.0)
+
+
+func _slider_to_radius(t: float) -> float:
+	var lo := SkeletonPoser.MIN_HANDLE_RADIUS
+	var hi := SkeletonPoser.MAX_HANDLE_RADIUS
+	return lerpf(lo, hi, clampf(t, 0.0, 1.0))
+
+
+func _on_handle_size(value: float) -> void:
+	if rig == null:
+		return
+	var r := _slider_to_radius(value)
+	rig.set_handle_radius(r)
+	set_status("Handle size: %.0f mm" % (r * 1000.0))
+
+
+func _auto_face_label() -> String:
+	return "Face cam: on" if auto_face else "Face cam: off"
+
+
+func _on_toggle_auto_face(_button: UIButton3D = null) -> void:
+	set_auto_face(not auto_face)
+	set_status("Panel auto-face %s." % ("on" if auto_face else "off"))
+	refresh()
+
+
+func _ring_label() -> String:
+	var app := _app_root()
+	if app != null and app.has_method("is_floor_ring_visible"):
+		return "Floor ring: on" if app.is_floor_ring_visible() else "Floor ring: off"
+	return "Floor ring: off"
+
+
+func _on_toggle_ring(_button: UIButton3D = null) -> void:
+	var app := _app_root()
+	if app == null or not app.has_method("set_floor_ring_visible"):
+		return
+	var next := not app.is_floor_ring_visible()
+	app.set_floor_ring_visible(next)
+	set_status("Floor ring %s." % ("shown" if next else "hidden"))
+	refresh()
 
 
 func _add_paging(pages: int, page: int, on_page: Callable, middle_text: String,
