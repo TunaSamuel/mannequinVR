@@ -14,6 +14,9 @@ const MAX_NATURAL_HEIGHT := 2.0
 const GRAB_MARGIN := 0.04
 const MIN_SCALE_MULTIPLIER := 0.2
 const MAX_SCALE_MULTIPLIER := 3.0
+## World-space floor height (CharacterRoot Y) the Floor slider dials.
+const MIN_FLOOR_Y := -0.25
+const MAX_FLOOR_Y := 2.0
 
 var model_root: Node3D
 var posing_root: Node3D
@@ -165,6 +168,14 @@ func set_scale_multiplier(value: float) -> void:
 
 func get_scale_multiplier() -> float:
 	return scale_multiplier
+
+
+func set_floor_y(y: float) -> void:
+	global_position.y = clampf(y, MIN_FLOOR_Y, MAX_FLOOR_Y)
+
+
+func get_floor_y() -> float:
+	return global_position.y
 
 
 func uniform_scale() -> float:
