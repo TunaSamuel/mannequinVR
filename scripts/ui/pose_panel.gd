@@ -170,9 +170,13 @@ func _build_scale_controls(has_model: bool) -> void:
 	if not has_model:
 		slider.position.z = -1.0
 
-	var fit := add_button("Fit to 1.6 m", Vector3(0, -0.150, 0), Vector2(0.30, 0.032), 0.014)
+	var fit := add_button("Fit to 1.6 m", Vector3(-0.12, -0.150, 0), Vector2(0.22, 0.032), 0.013)
 	fit.enabled = has_model
 	fit.pressed.connect(_on_fit_height)
+
+	var upright := add_button("Upright", Vector3(0.12, -0.150, 0), Vector2(0.22, 0.032), 0.013)
+	upright.enabled = has_model
+	upright.pressed.connect(_on_set_upright)
 
 
 func _scale_text() -> String:
@@ -232,6 +236,13 @@ func _on_fit_height(_button: UIButton3D = null) -> void:
 		return
 	set_status("Fitted to %.2f m tall." % rig.world_height())
 	refresh()
+
+
+func _on_set_upright(_button: UIButton3D = null) -> void:
+	if rig == null or not rig.has_model():
+		return
+	rig.set_upright()
+	set_status("Model set upright.")
 
 
 func _on_model_pressed(_button: UIButton3D, path: String) -> void:
@@ -546,6 +557,7 @@ func _build_help() -> void:
 		["CONTROLS", true],
 		["Trigger · menus   Grip · bones/body", false],
 		["Left stick walk · Right stick turn", false],
+		["Menu button · show / hide this panel", false],
 		["Hover a joint · bone name appears", false],
 		["Poses: Mirror, Lock hovered, Unlock all", false],
 	]
