@@ -57,13 +57,19 @@ func _process(_delta: float) -> void:
 			use_select = hover_candidate != null and _target_uses_select(hover_candidate)
 
 		var strength := interactor.get_select_strength() if use_select else interactor.get_grip_strength()
-		var pressed: bool = _input_down.get(interactor, false)
-		var threshold := GRAB_RELEASE_THRESHOLD if pressed else GRAB_START_THRESHOLD
-		pressed = strength >= threshold
+		var was_pressed: bool = _input_down.get(interactor, false)
+		var threshold := GRAB_RELEASE_THRESHOLD if was_pressed else GRAB_START_THRESHOLD
+		var pressed := strength >= threshold
+		# Rising edge only starts a new grab. Holding the trigger must not
+		# re-fire page/scale buttons every frame after a one-shot click.
+		var just_pressed := pressed and not was_pressed
 		_input_down[interactor] = pressed
 
 		if pressed:
-			if target == null or not is_instance_valid(target):
+			if target != null and is_instance_valid(target):
+				target.call("drag_grab", interactor)
+				continue
+			if just_pressed:
 				target = _find_target(interactor, targets)
 				if target != null:
 					# Re-check channel: only start a grab if the press matches
@@ -76,9 +82,8 @@ func _process(_delta: float) -> void:
 					_begin(interactor, target)
 					_clear_hover(interactor)
 					continue
-			if target != null and is_instance_valid(target):
-				target.call("drag_grab", interactor)
-				continue
+			_update_hover(interactor, targets)
+			continue
 
 		if target != null:
 			_release(interactor)
@@ -130,9 +135,15 @@ func _begin(interactor: XRInteractor, target: Node3D) -> void:
 	target.tree_exiting.connect(_on_target_exiting.bind(interactor), CONNECT_ONE_SHOT)
 	target.call("begin_grab", interactor)
 	interactor.pulse(HAPTIC_STRENGTH)
-	# Buttons are one-shot: release immediately so a held trigger cannot pin them.
+	# Buttons are one-shot clicks. Drop the grab immediately, but keep
+	# `_input_down` true until the trigger is physically released — otherwise
+	# the next frame would re-fire the same (or newly rebuilt) button and
+	# page/scale would race while the trigger is held.
 	if target.has_method("is_click_target") and bool(target.call("is_click_target")):
-		_release(interactor)
+		_grabbed.erase(interactor)
+		if is_instance_valid(target):
+			target.call("end_grab", interactor)
+		# Intentionally leave _input_down[interactor] alone.
 
 
 func _release(interactor: XRInteractor) -> void:
