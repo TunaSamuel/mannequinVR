@@ -47,7 +47,7 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_update_locomotion(delta)
-	if floor_ring != null:
+	if floor_ring != null and floor_ring.visible:
 		floor_ring.global_position = Vector3(rig.global_position.x, 0.002, rig.global_position.z)
 
 
@@ -166,17 +166,29 @@ func _auto_load_recent() -> void:
 	if recents.is_empty():
 		panel.set_status("Copy .glb characters into the models folder, then pick one.")
 		return
+	panel.set_status("Loading %s..." % recents[0].get_file())
 	var result := rig.load_model(recents[0])
 	if result.ok:
-		panel.set_status("Loaded %s. Pinch or grip a joint to pose." % rig.model_name)
+		panel.set_status("Loaded %s. Grip a joint to pose. See Help." % rig.model_name)
 	else:
 		panel.set_status(result.error, true)
 	panel.refresh()
 
 
+func set_floor_ring_visible(visible: bool) -> void:
+	if floor_ring != null:
+		floor_ring.visible = visible
+
+
+func is_floor_ring_visible() -> bool:
+	return floor_ring != null and floor_ring.visible
+
+
 func _setup_floor_ring() -> void:
 	if floor_ring == null:
 		return
+	# Hidden by default — passthrough already grounds the scene.
+	floor_ring.visible = false
 	var mesh := CylinderMesh.new()
 	mesh.top_radius = 0.5
 	mesh.bottom_radius = 0.5
