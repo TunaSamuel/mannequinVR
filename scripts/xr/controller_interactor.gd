@@ -13,8 +13,11 @@ const GRIP_CLICK_ACTION := &"grip_click"
 const TRIGGER_ACTION := &"trigger"
 const TRIGGER_CLICK_ACTION := &"trigger_click"
 const PRIMARY_ACTION := &"primary"
+## Quest menu / system-adjacent face button (OpenXR default action map).
+const MENU_ACTION := &"menu_button"
 
 var _controller: XRController3D
+var _menu_was_down := false
 
 
 func _ready() -> void:
@@ -79,3 +82,14 @@ func is_left_hand() -> bool:
 	if _controller == null:
 		return false
 	return _controller.get_tracker_hand() == XRPositionalTracker.TRACKER_HAND_LEFT
+
+
+## Rising edge of the menu button. Safe to call once per frame from app.
+func was_menu_just_pressed() -> bool:
+	if _controller == null or not is_tracking():
+		_menu_was_down = false
+		return false
+	var down := _controller.is_button_pressed(MENU_ACTION)
+	var just := down and not _menu_was_down
+	_menu_was_down = down
+	return just
