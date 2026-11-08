@@ -4,13 +4,15 @@ extends VRPanel
 ## pose actions. Everything is grabbed directly, so controllers and hands use
 ## exactly the same gestures.
 
-enum Tab { MODELS, SHAPES, POSES }
+enum Tab { MODELS, SHAPES, PARTS, POSES }
 
 const MODEL_ROWS := 3
 const SHAPE_ROWS := 4
 const POSE_ROWS := 4
+const PART_ROWS := 5
 const MODEL_ROW_STEP := 0.054
 const SHAPE_ROW_STEP := 0.060
+const PART_ROW_STEP := 0.048
 const PAGING_Y := -0.176
 
 var library: ModelLibrary
@@ -21,6 +23,7 @@ var _tab_buttons: Array[UIButton3D] = []
 var _models: Array[Dictionary] = []
 var _model_page := 0
 var _shape_page := 0
+var _part_page := 0
 var _bone_filter_button: UIButton3D
 var _tab_row_ready := false
 var _refreshing := false
@@ -48,12 +51,12 @@ func _build_tabs() -> void:
 	if _tab_row_ready:
 		return
 	_tab_row_ready = true
-	var labels := ["Models", "Shapes", "Poses"]
+	var labels := ["Models", "Shapes", "Parts", "Poses"]
 	for index in labels.size():
 		var button := UIButton3D.new()
 		add_child(button)
-		button.position = Vector3(-0.172 + index * 0.172, 0.140, 0.001)
-		button.setup(labels[index], Vector2(0.168, 0.036), 0.016)
+		button.position = Vector3(-0.2025 + index * 0.135, 0.140, 0.001)
+		button.setup(labels[index], Vector2(0.128, 0.036), 0.015)
 		button.pressed.connect(_on_tab_pressed.bind(index))
 		_tab_buttons.append(button)
 	_update_tab_buttons()
@@ -83,6 +86,8 @@ func refresh() -> void:
 			_build_models()
 		Tab.SHAPES:
 			_build_shapes()
+		Tab.PARTS:
+			_build_parts()
 		Tab.POSES:
 			_build_poses()
 	_update_title()
@@ -283,6 +288,75 @@ func _on_reset_shapes(_button: UIButton3D = null) -> void:
 		return
 	rig.blend_shapes.reset_all()
 	set_status("All blend shapes reset.")
+	refresh()
+
+
+func _build_parts() -> void:
+	if rig == null or not rig.has_model():
+		add_label("Load a character first.", Vector3(0, 0.05, 0), 0.018,
+				UIStyle.COLOR_TEXT_DIM, HORIZONTAL_ALIGNMENT_CENTER)
+		return
+	var total := rig.part_count()
+	if total == 0:
+		add_label("No mesh parts found on this model.", Vector3(0, 0.05, 0), 0.018,
+				UIStyle.COLOR_TEXT_DIM, HORIZONTAL_ALIGNMENT_CENTER)
+		add_label("Export separate Blender objects for hideable pieces.",
+				Vector3(0, 0.01, 0), 0.013, UIStyle.COLOR_TEXT_DIM, HORIZONTAL_ALIGNMENT_CENTER)
+		return
+
+	var pages := _page_count(total, PART_ROWS)
+	_part_page = clampi(_part_page, 0, pages - 1)
+	var start := _part_page * PART_ROWS
+	for row in PART_ROWS:
+		var index := start + row
+		if index >= total:
+			break
+		var visible := rig.is_part_visible(index)
+		var label := _part_label(rig.part_name(index), visible)
+		var button := add_button(label, Vector3(0, 0.096 - row * PART_ROW_STEP, 0),
+				Vector2(0.50, 0.040), 0.015)
+		button.selected = visible
+		button.pressed.connect(_on_part_toggle.bind(index))
+
+	var hide_all := add_button("Hide all", Vector3(-0.08, PAGING_Y + 0.038, 0), Vector2(0.12, 0.030), 0.013)
+	hide_all.pressed.connect(_on_hide_all_parts)
+	_add_paging(pages, _part_page, _on_part_page, "Show all", _on_show_all_parts)
+
+
+func _part_label(name: String, visible: bool) -> String:
+	var mark := "[on]  " if visible else "[off] "
+	var clipped := name
+	if clipped.length() > 28:
+		clipped = clipped.substr(0, 25) + "..."
+	return mark + clipped
+
+
+func _on_part_toggle(_button: UIButton3D, index: int) -> void:
+	if rig == null:
+		return
+	var visible := rig.toggle_part(index)
+	set_status("%s %s" % ["Shown" if visible else "Hidden", rig.part_name(index)])
+	refresh()
+
+
+func _on_part_page(delta: int) -> void:
+	_part_page = maxi(_part_page + delta, 0)
+	refresh()
+
+
+func _on_show_all_parts(_button: UIButton3D = null) -> void:
+	if rig == null:
+		return
+	var n := rig.set_all_parts_visible(true)
+	set_status("All %d parts shown." % n)
+	refresh()
+
+
+func _on_hide_all_parts(_button: UIButton3D = null) -> void:
+	if rig == null:
+		return
+	var n := rig.set_all_parts_visible(false)
+	set_status("All %d parts hidden." % n)
 	refresh()
 
 
