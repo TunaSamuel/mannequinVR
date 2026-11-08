@@ -142,21 +142,29 @@ func _build_missing_models_hint() -> void:
 
 
 func _build_scale_controls(has_model: bool) -> void:
-	# Continuous scale via slider (0.2x .. 3.0x). Avoids rapid re-click issues
-	# with Scale +/- and lets the user dial size smoothly.
-	var slider := add_slider("Scale", Vector3(0.0, -0.072, 0), 0.44, 0.014)
+	# Floor height (model Y). Vertical placement is not on the right stick —
+	# grip-grab the body for free move, or dial it here.
+	var height := add_slider("Floor", Vector3(0.0, -0.048, 0), 0.44, 0.013)
+	if has_model and rig != null:
+		height.set_value(_floor_to_slider(rig.get_floor_y()), false)
+	else:
+		height.set_value(_floor_to_slider(0.0), false)
+	height.value_changed.connect(_on_floor_slider)
+	if not has_model:
+		height.position.z = -1.0
+
+	# Continuous scale via slider (0.2x .. 3.0x).
+	var slider := add_slider("Scale", Vector3(0.0, -0.100, 0), 0.44, 0.013)
 	if has_model and rig != null:
 		var t := _multiplier_to_slider(rig.get_scale_multiplier())
 		slider.set_value(t, false)
 	else:
 		slider.set_value(0.5, false)
 	slider.value_changed.connect(_on_scale_slider)
-	# Disable interaction when no model is loaded by parking it out of reach
-	# (UISlider3D has no enabled flag).
 	if not has_model:
 		slider.position.z = -1.0
 
-	var fit := add_button("Fit to 1.6 m", Vector3(0, -0.132, 0), Vector2(0.30, 0.034), 0.015)
+	var fit := add_button("Fit to 1.6 m", Vector3(0, -0.150, 0), Vector2(0.30, 0.032), 0.014)
 	fit.enabled = has_model
 	fit.pressed.connect(_on_fit_height)
 
@@ -177,6 +185,25 @@ func _slider_to_multiplier(t: float) -> float:
 	var lo := CharacterRig.MIN_SCALE_MULTIPLIER
 	var hi := CharacterRig.MAX_SCALE_MULTIPLIER
 	return lerpf(lo, hi, clampf(t, 0.0, 1.0))
+
+
+func _floor_to_slider(y: float) -> float:
+	var lo := CharacterRig.MIN_FLOOR_Y
+	var hi := CharacterRig.MAX_FLOOR_Y
+	return clampf((y - lo) / maxf(hi - lo, 0.001), 0.0, 1.0)
+
+
+func _slider_to_floor(t: float) -> float:
+	var lo := CharacterRig.MIN_FLOOR_Y
+	var hi := CharacterRig.MAX_FLOOR_Y
+	return lerpf(lo, hi, clampf(t, 0.0, 1.0))
+
+
+func _on_floor_slider(value: float) -> void:
+	if rig == null or not rig.has_model():
+		return
+	rig.set_floor_y(_slider_to_floor(value))
+	set_status("Floor height: %.2f m" % rig.get_floor_y())
 
 
 ## Continuous scale. Intentionally does NOT refresh the whole panel — rebuilding
