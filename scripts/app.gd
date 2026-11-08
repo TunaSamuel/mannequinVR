@@ -5,9 +5,9 @@ extends Node3D
 const CHARACTER_DISTANCE := 1.15
 const PANEL_LOCAL_OFFSET := Vector3(-0.30, 1.28, -0.55)
 const PANEL_FALLBACK_POSITION := Vector3(-0.30, 1.30, -0.95)
-## Left stick moves the player (XR origin). Right stick turns and lifts the model.
+## Left stick moves the player (XR origin). Right stick X turns only.
+## Model height is the Floor slider (or grip-grab the body).
 const MOVE_SPEED := 1.4
-const MODEL_MOVE_SPEED := 1.1
 const TURN_SPEED := 1.6
 const STICK_DEADZONE := 0.18
 
@@ -82,19 +82,19 @@ func _update_locomotion(delta: float) -> void:
 		var move := (right_dir * left.x + forward * left.y) * MOVE_SPEED * delta
 		xr_origin.global_position += move
 
-	# Right stick X: smooth turn only.
-	# Right stick Y: raise / lower the character (world up).
-	if right.length_squared() > 0.0:
-		if absf(right.x) > 0.0:
-			xr_origin.rotate_y(-right.x * TURN_SPEED * delta)
-		if rig != null and rig.has_model() and absf(right.y) > 0.0:
-			rig.global_position += Vector3.UP * right.y * MODEL_MOVE_SPEED * delta
+	# Right stick X only: smooth turn. Ignore Y so slight vertical bias on the
+	# stick cannot spin the player. Model height is the Floor slider / grip-grab.
+	if absf(right.x) > 0.0:
+		xr_origin.rotate_y(-right.x * TURN_SPEED * delta)
 
 
 func _apply_deadzone(v: Vector2) -> Vector2:
-	if v.length() < STICK_DEADZONE:
+	var length := v.length()
+	if length < STICK_DEADZONE:
 		return Vector2.ZERO
-	return v.limit_length(1.0)
+	# Rescale past the deadzone so small intentional inputs still reach full range.
+	var scaled := v.normalized() * ((length - STICK_DEADZONE) / maxf(1.0 - STICK_DEADZONE, 0.001))
+	return scaled.limit_length(1.0)
 
 
 func _setup_passthrough() -> void:
