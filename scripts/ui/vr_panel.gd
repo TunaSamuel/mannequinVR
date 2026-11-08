@@ -12,6 +12,10 @@ var _title_label: Label3D
 var _status_label: Label3D
 var _drag_handle: UIDragHandle
 var _content: Node3D
+## When true the panel yaws to face the headset. Disabled while the user is
+## dragging it so placement stays intentional.
+var auto_face := true
+const FACE_SPEED := 8.0
 
 
 func setup() -> void:
@@ -98,3 +102,24 @@ func add_slider(title: String, local_position: Vector3, track_length: float,
 	slider.position = local_position
 	slider.setup(title, track_length, height)
 	return slider
+
+
+func set_auto_face(enabled: bool) -> void:
+	auto_face = enabled
+
+
+func _process(delta: float) -> void:
+	if not auto_face:
+		return
+	var cam := get_viewport().get_camera_3d()
+	if cam == null:
+		return
+	var to_cam := cam.global_position - global_position
+	to_cam.y = 0.0
+	if to_cam.length_squared() < 0.0001:
+		return
+	# Panel faces the user: look along -to_cam so the front points toward the camera.
+	var desired := Basis.looking_at(-to_cam.normalized(), Vector3.UP)
+	var current := global_transform.basis.orthonormalized()
+	var blended := current.slerp(desired, 1.0 - exp(-FACE_SPEED * delta))
+	global_transform = Transform3D(blended, global_position)
