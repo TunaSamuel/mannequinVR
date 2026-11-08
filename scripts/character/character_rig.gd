@@ -182,6 +182,16 @@ func uniform_scale() -> float:
 	return maxf(base_scale * scale_multiplier, 0.0001)
 
 
+## Drop tilt/roll/yaw so the character stands upright in world space.
+## Keeps position and uniform scale.
+func set_upright() -> void:
+	if not has_model():
+		return
+	_sync_multipliers_from_transform()
+	var s := uniform_scale()
+	global_transform = Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * s), global_position)
+
+
 func fit_to_height(target_height: float = TARGET_HEIGHT) -> bool:
 	if not has_model():
 		return false
