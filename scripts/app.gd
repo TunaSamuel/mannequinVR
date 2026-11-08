@@ -5,7 +5,7 @@ extends Node3D
 const CHARACTER_DISTANCE := 1.15
 const PANEL_LOCAL_OFFSET := Vector3(-0.30, 1.28, -0.55)
 const PANEL_FALLBACK_POSITION := Vector3(-0.30, 1.30, -0.95)
-## Left stick moves the player (XR origin). Right stick moves the character.
+## Left stick moves the player (XR origin). Right stick turns and lifts the model.
 const MOVE_SPEED := 1.4
 const MODEL_MOVE_SPEED := 1.1
 const TURN_SPEED := 1.6
@@ -82,23 +82,13 @@ func _update_locomotion(delta: float) -> void:
 		var move := (right_dir * left.x + forward * left.y) * MOVE_SPEED * delta
 		xr_origin.global_position += move
 
-	# Right stick X: smooth turn. Right stick Y: push the character nearer/farther
-	# along the player's forward, and X also slides the model sideways.
+	# Right stick X: smooth turn only.
+	# Right stick Y: raise / lower the character (world up).
 	if right.length_squared() > 0.0:
 		if absf(right.x) > 0.0:
 			xr_origin.rotate_y(-right.x * TURN_SPEED * delta)
-		if rig != null and rig.has_model() and absf(right.y) + absf(right.x) > 0.0:
-			var forward := -camera.global_transform.basis.z
-			forward.y = 0.0
-			if forward.length_squared() > 0.0001:
-				forward = forward.normalized()
-			var right_dir := camera.global_transform.basis.x
-			right_dir.y = 0.0
-			if right_dir.length_squared() > 0.0001:
-				right_dir = right_dir.normalized()
-			# Prefer Y for in/out; residual X after turn still nudges model sideways.
-			var model_move := (forward * right.y + right_dir * right.x * 0.35) * MODEL_MOVE_SPEED * delta
-			rig.global_position += model_move
+		if rig != null and rig.has_model() and absf(right.y) > 0.0:
+			rig.global_position += Vector3.UP * right.y * MODEL_MOVE_SPEED * delta
 
 
 func _apply_deadzone(v: Vector2) -> Vector2:
