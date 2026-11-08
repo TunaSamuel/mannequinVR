@@ -186,6 +186,7 @@ func get_grab_distance(point: Vector3) -> float:
 func begin_grab(interactor: XRInteractor) -> void:
 	if not is_bone_pose_valid() or locked:
 		return
+	_checkpoint_rig()
 	_grabbed_by = interactor
 	_start_bone_pose = _skeleton.get_bone_global_pose(bone_index)
 	_start_interactor_basis = interactor.get_grab_basis().orthonormalized()
@@ -223,3 +224,12 @@ func _emit_pose_changed() -> void:
 			owner_rig.emit_signal("bone_pose_edited")
 			return
 		owner_rig = owner_rig.get_parent()
+
+
+func _checkpoint_rig() -> void:
+	var node: Node = self
+	while node != null:
+		if node.has_method("checkpoint"):
+			node.call("checkpoint")
+			return
+		node = node.get_parent()
