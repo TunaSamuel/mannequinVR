@@ -613,7 +613,7 @@ func _on_toggle_auto_face(_button: UIButton3D = null) -> void:
 func _ring_label() -> String:
 	var app := _app_root()
 	if app != null and app.has_method("is_floor_ring_visible"):
-		return "Floor ring: on" if app.is_floor_ring_visible() else "Floor ring: off"
+		return "Floor ring: on" if bool(app.call("is_floor_ring_visible")) else "Floor ring: off"
 	return "Floor ring: off"
 
 
@@ -621,9 +621,12 @@ func _on_toggle_ring(_button: UIButton3D = null) -> void:
 	var app := _app_root()
 	if app == null or not app.has_method("set_floor_ring_visible"):
 		return
-	var next := not app.is_floor_ring_visible()
-	app.set_floor_ring_visible(next)
-	set_status("Floor ring %s." % ("shown" if next else "hidden"))
+	var currently_visible := false
+	if app.has_method("is_floor_ring_visible"):
+		currently_visible = bool(app.call("is_floor_ring_visible"))
+	var next_visible: bool = not currently_visible
+	app.call("set_floor_ring_visible", next_visible)
+	set_status("Floor ring %s." % ("shown" if next_visible else "hidden"))
 	refresh()
 
 
