@@ -12,6 +12,8 @@ const TURN_SPEED := 1.6
 const STICK_DEADZONE := 0.18
 
 var library := ModelLibrary.new()
+var fill_light: OmniLight3D
+var light_handle: LightHandle
 
 @onready var xr_origin: XROrigin3D = $XROrigin3D
 @onready var camera: XRCamera3D = $XROrigin3D/XRCamera3D
@@ -143,8 +145,16 @@ func _setup_environment() -> void:
 	fill.position = Vector3(0.9, 1.6, 0.7)
 	fill.omni_range = 4.5
 	fill.light_energy = 1.6
+	fill.light_color = Color(1.0, 0.97, 0.92)
 	fill.shadow_enabled = false
 	add_child(fill)
+	fill_light = fill
+
+	var handle := LightHandle.new()
+	handle.name = "LightHandle"
+	add_child(handle)
+	handle.setup(fill)
+	light_handle = handle
 
 
 func _register_interactors(node: Node) -> void:
@@ -218,6 +228,48 @@ func _auto_load_recent() -> void:
 	else:
 		panel.set_status(result.error, true)
 	panel.refresh()
+
+
+func get_fill_light() -> OmniLight3D:
+	return fill_light
+
+
+func set_light_energy(value: float) -> void:
+	if fill_light != null:
+		fill_light.light_energy = clampf(value, 0.0, 8.0)
+
+
+func get_light_energy() -> float:
+	return fill_light.light_energy if fill_light != null else 1.6
+
+
+func set_light_range(value: float) -> void:
+	if fill_light != null:
+		fill_light.omni_range = clampf(value, 0.5, 12.0)
+
+
+func get_light_range() -> float:
+	return fill_light.omni_range if fill_light != null else 4.5
+
+
+func set_light_color(color: Color) -> void:
+	if fill_light != null:
+		fill_light.light_color = color
+
+
+func get_light_color() -> Color:
+	return fill_light.light_color if fill_light != null else Color(1.0, 0.97, 0.92)
+
+
+func reset_light() -> void:
+	if fill_light == null:
+		return
+	fill_light.position = Vector3(0.9, 1.6, 0.7)
+	fill_light.omni_range = 4.5
+	fill_light.light_energy = 1.6
+	fill_light.light_color = Color(1.0, 0.97, 0.92)
+	if light_handle != null:
+		light_handle.sync_from_light()
 
 
 func set_floor_ring_visible(visible: bool) -> void:
