@@ -42,6 +42,7 @@ var _dual_midpoint_local := Vector3.ZERO
 var _dual_start_axis := Vector3.ZERO
 var _hovered := false
 var _parts: Array[MeshInstance3D] = []
+var _history := PoseHistory.new()
 
 
 func _ready() -> void:
@@ -93,6 +94,7 @@ func install_model(scene: Node3D, source_path: String = "", display_name: String
 		posers.append(poser)
 	blend_shapes.collect(scene)
 	_collect_parts(scene)
+	_history.clear()
 	pose_edited.emit()
 	var info := get_info()
 	model_changed.emit(info)
@@ -118,6 +120,7 @@ func unload() -> void:
 	model_warnings = PackedStringArray()
 	base_scale = 1.0
 	scale_multiplier = 1.0
+	_history.clear()
 	_apply_scale()
 	model_cleared.emit()
 
@@ -187,6 +190,7 @@ func uniform_scale() -> float:
 func set_upright() -> void:
 	if not has_model():
 		return
+	checkpoint()
 	_sync_multipliers_from_transform()
 	var s := uniform_scale()
 	global_transform = Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * s), global_position)
@@ -298,7 +302,54 @@ func apply_pose(document: Dictionary) -> Dictionary:
 	return summary
 
 
+func checkpoint() -> void:
+	if not has_model():
+		return
+	_history.checkpoint(capture_pose())
+
+
+func can_undo() -> bool:
+	return _history.can_undo()
+
+
+func can_redo() -> bool:
+	return _history.can_redo()
+
+
+func undo_count() -> int:
+	return _history.undo_count()
+
+
+func redo_count() -> int:
+	return _history.redo_count()
+
+
+func undo() -> bool:
+	if not has_model() or not can_undo():
+		return false
+	var snap := _history.undo(capture_pose())
+	if snap.is_empty():
+		return false
+	_history.suspended = true
+	apply_pose(snap)
+	_history.suspended = false
+	return true
+
+
+func redo() -> bool:
+	if not has_model() or not can_redo():
+		return false
+	var snap := _history.redo(capture_pose())
+	if snap.is_empty():
+		return false
+	_history.suspended = true
+	apply_pose(snap)
+	_history.suspended = false
+	return true
+
+
 func reset_pose() -> void:
+	checkpoint()
 	for poser in posers:
 		if is_instance_valid(poser):
 			poser.reset_pose()
@@ -306,12 +357,15 @@ func reset_pose() -> void:
 
 
 func mirror_pose() -> int:
+	checkpoint()
 	var total := 0
 	for poser in posers:
 		if is_instance_valid(poser):
 			total += poser.mirror_pose()
 	if total > 0:
 		pose_edited.emit()
+	elif can_undo():
+		_history.drop_last()
 	return total
 
 
@@ -476,6 +530,8 @@ func world_bounds() -> AABB:
 func begin_grab(interactor: XRInteractor) -> void:
 	if not has_model() or _grabs.has(interactor):
 		return
+	if _grabs.is_empty():
+		checkpoint()
 	_grabs.append(interactor)
 	if _grabs.size() == 1:
 		_start_single(interactor)

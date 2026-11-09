@@ -427,7 +427,15 @@ func _build_poses() -> void:
 	unlock.enabled = has_model
 	unlock.pressed.connect(_on_unlock_all)
 
-	var save_button := add_button("Save pose", Vector3(-0.128, -0.110, 0), Vector2(0.24, 0.034), 0.014)
+	var undo_btn := add_button("Undo", Vector3(-0.128, -0.110, 0), Vector2(0.115, 0.034), 0.014)
+	undo_btn.enabled = has_model and rig.can_undo()
+	undo_btn.pressed.connect(_on_undo)
+
+	var redo_btn := add_button("Redo", Vector3(-0.005, -0.110, 0), Vector2(0.115, 0.034), 0.014)
+	redo_btn.enabled = has_model and rig.can_redo()
+	redo_btn.pressed.connect(_on_redo)
+
+	var save_button := add_button("Save pose", Vector3(-0.128, -0.152, 0), Vector2(0.24, 0.030), 0.013)
 	save_button.enabled = has_model
 	save_button.pressed.connect(_on_save_pose)
 
@@ -536,6 +544,26 @@ func _on_save_pose(_button: UIButton3D = null) -> void:
 	refresh()
 
 
+func _on_undo(_button: UIButton3D = null) -> void:
+	if rig == null or not rig.has_model():
+		return
+	if not rig.undo():
+		set_status("Nothing to undo.", true)
+		return
+	set_status("Undid pose (%d left)" % rig.undo_count())
+	refresh()
+
+
+func _on_redo(_button: UIButton3D = null) -> void:
+	if rig == null or not rig.has_model():
+		return
+	if not rig.redo():
+		set_status("Nothing to redo.", true)
+		return
+	set_status("Redid pose (%d left)" % rig.redo_count())
+	refresh()
+
+
 func _on_load_pose(_button: UIButton3D, path: String) -> void:
 	if rig == null:
 		return
@@ -543,6 +571,7 @@ func _on_load_pose(_button: UIButton3D, path: String) -> void:
 	if document.is_empty():
 		set_status("Pose file could not be read.", true)
 		return
+	rig.checkpoint()
 	var summary := rig.apply_pose(document)
 	var message := "Pose loaded: %d bones, %d shapes" % [
 		int(summary["bones"]), int(summary["shapes"])]
@@ -559,7 +588,7 @@ func _build_help() -> void:
 		["Left stick walk · Right stick turn", false],
 		["Menu button · show / hide this panel", false],
 		["Hover a joint · bone name appears", false],
-		["Poses: Mirror, Lock hovered, Unlock all", false],
+		["Poses: Undo / Redo, Mirror, Lock", false],
 	]
 	var y := 0.100
 	for entry in lines:
