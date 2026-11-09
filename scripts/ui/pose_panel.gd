@@ -589,6 +589,7 @@ func _build_help() -> void:
 		["Menu button · show / hide this panel", false],
 		["Hover a joint · bone name appears", false],
 		["Poses: Undo / Redo, Mirror, Lock", false],
+		["Grip yellow ball · move fill light", false],
 	]
 	var y := 0.100
 	for entry in lines:
@@ -613,12 +614,75 @@ func _build_help() -> void:
 		radius = rig.get_handle_radius()
 	size_slider.set_value(_radius_to_slider(radius), false)
 	size_slider.value_changed.connect(_on_handle_size)
-	y -= 0.048
+	y -= 0.042
+
+	# Fill light (moveable sphere in world; grip-drag the yellow ball)
+	var app_node := _app_root()
+	var power := add_slider("Light power", Vector3(0.0, y, 0), 0.42, 0.012)
+	var energy := 1.6
+	if app_node != null and app_node.has_method("get_light_energy"):
+		energy = float(app_node.call("get_light_energy"))
+	power.set_value(clampf(energy / 8.0, 0.0, 1.0), false)
+	power.value_changed.connect(_on_light_power)
+	y -= 0.042
+
+	var range_s := add_slider("Light range", Vector3(0.0, y, 0), 0.42, 0.012)
+	var light_range := 4.5
+	if app_node != null and app_node.has_method("get_light_range"):
+		light_range = float(app_node.call("get_light_range"))
+	range_s.set_value(clampf((light_range - 0.5) / 11.5, 0.0, 1.0), false)
+	range_s.value_changed.connect(_on_light_range)
+	y -= 0.040
+
+	var warm := add_button("Warm", Vector3(-0.16, y, 0), Vector2(0.10, 0.028), 0.012)
+	warm.pressed.connect(_on_light_preset.bind(Color(1.0, 0.92, 0.78)))
+	var cool := add_button("Cool", Vector3(-0.05, y, 0), Vector2(0.10, 0.028), 0.012)
+	cool.pressed.connect(_on_light_preset.bind(Color(0.82, 0.90, 1.0)))
+	var white := add_button("White", Vector3(0.06, y, 0), Vector2(0.10, 0.028), 0.012)
+	white.pressed.connect(_on_light_preset.bind(Color(1.0, 1.0, 1.0)))
+	var reset_l := add_button("Reset", Vector3(0.17, y, 0), Vector2(0.10, 0.028), 0.012)
+	reset_l.pressed.connect(_on_light_reset)
+	y -= 0.040
 
 	var face := add_button(_auto_face_label(), Vector3(-0.12, y, 0), Vector2(0.22, 0.032), 0.013)
 	face.pressed.connect(_on_toggle_auto_face)
 	var ring := add_button(_ring_label(), Vector3(0.12, y, 0), Vector2(0.22, 0.032), 0.013)
 	ring.pressed.connect(_on_toggle_ring)
+
+
+func _on_light_power(value: float) -> void:
+	var app_node := _app_root()
+	if app_node == null or not app_node.has_method("set_light_energy"):
+		return
+	var energy := clampf(value, 0.0, 1.0) * 8.0
+	app_node.call("set_light_energy", energy)
+	set_status("Light power: %.1f" % energy)
+
+
+func _on_light_range(value: float) -> void:
+	var app_node := _app_root()
+	if app_node == null or not app_node.has_method("set_light_range"):
+		return
+	var light_range := 0.5 + clampf(value, 0.0, 1.0) * 11.5
+	app_node.call("set_light_range", light_range)
+	set_status("Light range: %.1f m" % light_range)
+
+
+func _on_light_preset(_button: UIButton3D, color: Color) -> void:
+	var app_node := _app_root()
+	if app_node == null or not app_node.has_method("set_light_color"):
+		return
+	app_node.call("set_light_color", color)
+	set_status("Light color set.")
+
+
+func _on_light_reset(_button: UIButton3D = null) -> void:
+	var app_node := _app_root()
+	if app_node == null or not app_node.has_method("reset_light"):
+		return
+	app_node.call("reset_light")
+	set_status("Light reset to default.")
+	refresh()
 
 
 func _radius_to_slider(radius: float) -> float:
