@@ -52,3 +52,8 @@ func redo(current: Dictionary) -> Dictionary:
 		return {}
 	_undo.append(current)
 	return _redo.pop_back()
+
+
+func drop_last() -> void:
+	if not _undo.is_empty():
+		_undo.pop_back()
